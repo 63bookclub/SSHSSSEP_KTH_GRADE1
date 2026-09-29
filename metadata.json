@@ -1,0 +1,6 @@
+{
+  "name": "VaxMatch 3D",
+  "description": "병원체 단백질(타겟)과 백신 후보 물질의 3D 구조를 비교해 항원 구조 모방도를 점수와 3D 겹침 화면으로 분석하는 과학 탐구 도구",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
