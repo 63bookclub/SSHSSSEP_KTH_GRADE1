@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Header,
 } from './components/Header.tsx';
@@ -25,15 +25,11 @@ import {
 import { PRESET_BENCHMARKS } from './services/presets.ts';
 import {
   Layers,
-  Target,
   Dna,
-  BarChart3,
   ArrowRight,
   Play,
   RefreshCw,
-  CheckCircle2,
   AlertCircle,
-  HelpCircle,
   Sparkles,
 } from 'lucide-react';
 

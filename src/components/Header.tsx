@@ -1,10 +1,10 @@
 import React from 'react';
-import { Dna, BookOpen, Beaker, HelpCircle, ChevronDown, Check, ShieldAlert } from 'lucide-react';
+import { Dna, BookOpen, Beaker, ChevronDown } from 'lucide-react';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
 
 interface HeaderProps {
   onOpenGlossary: () => void;
-  onOpenValidationLab: () => void;
+  onOpenValidationLab?: () => void;
   onSelectPreset: (presetId: string) => void;
   activeTab: 'workflow' | 'validation';
   setActiveTab: (tab: 'workflow' | 'validation') => void;

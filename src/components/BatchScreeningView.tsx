@@ -5,25 +5,18 @@ import {
   Trash2,
   Play,
   FileSpreadsheet,
-  CheckCircle2,
   AlertCircle,
   Sparkles,
-  ArrowRight,
   RefreshCw,
   Trophy,
   Dna,
   Target,
-  BarChart3,
-  Search,
-  ExternalLink,
   ChevronRight,
-  Info,
 } from 'lucide-react';
 import {
   CandidateEntity,
   MultiEpitopeEntity,
   BatchAnalyzeResponse,
-  BatchCandidateResult,
   batchAnalyze,
   JobResultData,
 } from '../services/api.ts';
@@ -87,7 +80,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchResponse, setBatchResponse] = useState<BatchAnalyzeResponse | null>(null);
-  const [selectedResult, setSelectedResult] = useState<BatchCandidateResult | null>(null);
 
   // Add new epitope entity
   const handleAddEpitope = () => {
@@ -150,9 +142,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
         weights,
       });
       setBatchResponse(res);
-      if (res.results.length > 0) {
-        setSelectedResult(res.results[0]);
-      }
     } catch (err: any) {
       setError(err.message || '다중 후보 물질 배치 분석 중 오류가 발생했습니다.');
     } finally {
