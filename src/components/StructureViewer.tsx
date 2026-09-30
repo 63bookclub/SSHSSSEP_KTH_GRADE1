@@ -26,6 +26,30 @@ declare global {
   }
 }
 
+const parseRangeList = (rangeStr?: string): number[] => {
+  if (!rangeStr) return [];
+  const result: number[] = [];
+  const parts = rangeStr.split(/[,;\s]+/);
+  for (const p of parts) {
+    const trimmed = p.trim();
+    if (!trimmed) continue;
+    if (trimmed.includes('-')) {
+      const [s, e] = trimmed.split('-').map((v) => parseInt(v, 10));
+      if (!isNaN(s) && !isNaN(e)) {
+        const start = Math.min(s, e);
+        const end = Math.max(s, e);
+        for (let i = start; i <= end; i++) {
+          result.push(i);
+        }
+      }
+    } else {
+      const num = parseInt(trimmed, 10);
+      if (!isNaN(num)) result.push(num);
+    }
+  }
+  return result;
+};
+
 export const StructureViewer: React.FC<StructureViewerProps> = ({
   targetPdb,
   candidatePdb,
@@ -112,20 +136,25 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
           if (showEpitopeSticks) {
             if (multiEpitopes && multiEpitopes.length > 0) {
               multiEpitopes.forEach((ep) => {
-                const epResList = residueDeviations
-                  .filter((d) => (d as any).epitope_id === ep.id || (ep.range && ep.range.includes(String(d.res_id))))
+                const epResFromRange = parseRangeList(ep.range);
+                const epResFromDev = residueDeviations
+                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id))
                   .map((d) => d.res_id);
-                const targetResiList = epResList.length > 0 ? epResList : epitopeResidues;
-                m0.addStyle(
-                  { resi: targetResiList },
-                  { stick: { color: ep.color || '#f43f5e', radius: 0.38, opacity: 1.0 } }
-                );
+                const targetResiList = epResFromDev.length > 0 ? epResFromDev : epResFromRange;
+                if (targetResiList.length > 0) {
+                  const sel: any = { model: m0, resi: targetResiList };
+                  if (targetChain) sel.chain = targetChain;
+                  viewer.addStyle(sel, {
+                    stick: { color: ep.color || '#f43f5e', radius: 0.38, opacity: 1.0 },
+                  });
+                }
               });
             } else if (epitopeResidues.length > 0) {
-              m0.addStyle(
-                { resi: epitopeResidues },
-                { stick: { color: '#f43f5e', radius: 0.35, opacity: 1.0 } }
-              );
+              const sel: any = { model: m0, resi: epitopeResidues };
+              if (targetChain) sel.chain = targetChain;
+              viewer.addStyle(sel, {
+                stick: { color: '#f43f5e', radius: 0.35, opacity: 1.0 },
+              });
             }
           }
         }
@@ -167,22 +196,25 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
           if (showEpitopeSticks) {
             if (multiEpitopes && multiEpitopes.length > 0) {
               multiEpitopes.forEach((ep) => {
-                const epResList = residueDeviations
-                  .filter((d) => (d as any).epitope_id === ep.id || (ep.range && ep.range.includes(String(d.res_id))))
+                const epResFromRange = parseRangeList(ep.range);
+                const epResFromDev = residueDeviations
+                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id))
                   .map((d) => d.cand_res_id ?? d.res_id);
-                const targetResiList = epResList.length > 0 ? epResList : epitopeResidues;
-                m1.addStyle(
-                  { resi: targetResiList },
-                  { stick: { color: ep.color || '#c084fc', radius: 0.32, opacity: 1.0 } }
-                );
+                const candResiList = epResFromDev.length > 0 ? epResFromDev : epResFromRange;
+                if (candResiList.length > 0) {
+                  viewer.addStyle(
+                    { model: m1, resi: candResiList },
+                    { stick: { color: ep.color || '#c084fc', radius: 0.32, opacity: 1.0 } }
+                  );
+                }
               });
             } else if (epitopeResidues.length > 0) {
               const candEpiResi = residueDeviations
                 .filter((d) => d.in_epitope)
                 .map((d) => d.cand_res_id ?? d.res_id);
-              const targetResiList = candEpiResi.length > 0 ? candEpiResi : epitopeResidues;
-              m1.addStyle(
-                { resi: targetResiList },
+              const candResiList = candEpiResi.length > 0 ? candEpiResi : epitopeResidues;
+              viewer.addStyle(
+                { model: m1, resi: candResiList },
                 { stick: { color: '#c084fc', radius: 0.30, opacity: 1.0 } }
               );
             }
@@ -281,7 +313,20 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
 
   useEffect(() => {
     updateStyles();
-  }, [showTarget, showCandidate, showEpitopeSticks, showSurface, colorByDeviation, renderMode, isolateTargetChain, residueDeviations]);
+  }, [
+    showTarget,
+    showCandidate,
+    showEpitopeSticks,
+    showSurface,
+    colorByDeviation,
+    renderMode,
+    isolateTargetChain,
+    residueDeviations,
+    epitopeResidues,
+    multiEpitopes,
+    targetChain,
+    candidateChain,
+  ]);
 
   const toggleSpin = () => {
     const viewer = viewerRef.current;

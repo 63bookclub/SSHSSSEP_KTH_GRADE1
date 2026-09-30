@@ -5,9 +5,7 @@
  * to eliminate messy markdown symbols, LaTeX formatting, and truncation issues.
  */
 
-const GROQ_API_KEY =
-  process.env.GROQ_API_KEY ||
-  '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';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
 export interface AiInsightRequest {
   finalScore: number;
@@ -33,6 +31,10 @@ export interface AiInsightRequest {
 }
 
 export async function generateAiInsight(data: AiInsightRequest): Promise<string> {
+  if (!GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY가 서버 환경 변수에 설정되지 않았습니다. 환경 변수 GROQ_API_KEY를 등록해 주세요.');
+  }
+
   const prompt = `
 당신은 백신학 및 구조생물학(Computational Vaccinology) 전문 AI 분석관입니다.
 아래 제공된 단백질 3차원 구조 비교 분석 데이터를 바탕으로, 연구자와 학생을 위한 정밀 평가 보고서를 작성해 주십시오.
@@ -77,7 +79,12 @@ export async function generateAiInsight(data: AiInsightRequest): Promise<string>
 ★ 절대 문장이 중간에 잘리지 않도록 각 문장을 명확하고 간결하게 작성하여 마지막 [/DISCLAIMER] 태그까지 완결하여 출력하십시오.
 `;
 
-  const candidateModels = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
+  const candidateModels = [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+  ];
   let lastError = '';
 
   for (const model of candidateModels) {
