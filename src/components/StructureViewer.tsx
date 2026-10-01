@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Layers, Eye, EyeOff, Sparkles, RefreshCcw } from 'lucide-react';
 
 interface ResidueDev {
-  res_id: number;
-  cand_res_id?: number;
+  res_id: number | string;
+  cand_res_id?: number | string;
   distance: number;
   in_epitope: boolean;
 }
@@ -13,7 +13,7 @@ interface StructureViewerProps {
   candidatePdb?: string;
   targetChain?: string;
   candidateChain?: string;
-  epitopeResidues?: number[];
+  epitopeResidues?: (number | string)[];
   multiEpitopes?: { id: string; name: string; range: string; color: string }[];
   residueDeviations?: ResidueDev[];
   height?: string;
@@ -26,9 +26,9 @@ declare global {
   }
 }
 
-const parseRangeList = (rangeStr?: string): number[] => {
+const parseRangeList = (rangeStr?: string): (number | string)[] => {
   if (!rangeStr) return [];
-  const result: number[] = [];
+  const result: (number | string)[] = [];
   const parts = rangeStr.split(/[,;\s]+/);
   for (const p of parts) {
     const trimmed = p.trim();
@@ -44,7 +44,11 @@ const parseRangeList = (rangeStr?: string): number[] => {
       }
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) result.push(num);
+      if (!isNaN(num) && num.toString() === trimmed) {
+        result.push(num);
+      } else {
+        result.push(trimmed);
+      }
     }
   }
   return result;
@@ -138,7 +142,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
               multiEpitopes.forEach((ep) => {
                 const epResFromRange = parseRangeList(ep.range);
                 const epResFromDev = residueDeviations
-                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id))
+                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id as any))
                   .map((d) => d.res_id);
                 const targetResiList = epResFromDev.length > 0 ? epResFromDev : epResFromRange;
                 if (targetResiList.length > 0) {
@@ -198,7 +202,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
               multiEpitopes.forEach((ep) => {
                 const epResFromRange = parseRangeList(ep.range);
                 const epResFromDev = residueDeviations
-                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id))
+                  .filter((d) => (d as any).epitope_id === ep.id || epResFromRange.includes(d.res_id as any))
                   .map((d) => d.cand_res_id ?? d.res_id);
                 const candResiList = epResFromDev.length > 0 ? epResFromDev : epResFromRange;
                 if (candResiList.length > 0) {

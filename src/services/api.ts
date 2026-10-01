@@ -96,8 +96,8 @@ export interface JobResultData {
     final_fitness_score: number;
     evaluation_rationale: string;
     residues: {
-      res_id: number;
-      cand_res_id?: number;
+      res_id: number | string;
+      cand_res_id?: number | string;
       res_name?: string;
       in_epitope: boolean;
       distance: number;
