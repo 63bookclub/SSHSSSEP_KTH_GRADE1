@@ -14,7 +14,9 @@ import {
   EvaluationResult,
   MultiEpitopeEntity,
   Residue,
+  getResidueKey,
 } from './src/services/bioAlgorithms.ts';
+import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
 import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
 
@@ -50,7 +52,7 @@ interface StoredEpitope {
   id: string;
   targetId: string;
   method: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback';
-  residues: number[];
+  residues: (number | string)[];
   isTemporary: boolean;
   createdAtMs: number;
 }
@@ -296,7 +298,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       return res.status(404).json({ error: '지정된 target_id를 찾을 수 없습니다.' });
     }
 
-    let resolvedResidues: number[] = [];
+    let resolvedResidues: (number | string)[] = [];
     let isTemporary = false;
 
     if (method === 'manual') {
@@ -327,7 +329,19 @@ app.post('/api/v1/epitopes', async (req, res) => {
           .filter(Boolean);
         const agChain = antigen_chain || target_chain;
 
-        resolvedResidues = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+        const rawContacts = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+        const complexAgResidues = complexStruct.residuesByChain[agChain] || [];
+        const targetResidues = target.structure.residuesByChain[target_chain] || [];
+
+        const mappingResult = await mapComplexResiduesToTarget(
+          complexAgResidues,
+          targetResidues,
+          rawContacts,
+          complex_pdb_id,
+          target.identifier
+        );
+
+        resolvedResidues = mappingResult.mappedResidues;
       } catch (cErr: any) {
         // Fallback to manual range or known contact residue ranges
         if (manual_range) {
