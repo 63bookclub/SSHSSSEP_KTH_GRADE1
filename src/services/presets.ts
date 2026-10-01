@@ -1,5 +1,5 @@
 /**
- * Pre-configured presets and validation benchmarks for VaxMatch 3D
+ * Pre-configured presets and validation benchmarks for 2026 SSEP_TEAM SSBD(씁뜩)
  * Enables instant one-click testing for students and researchers.
  */
 

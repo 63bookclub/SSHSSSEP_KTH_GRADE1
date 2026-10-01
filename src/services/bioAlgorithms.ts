@@ -1,5 +1,5 @@
 /**
- * Biological and structural bioinformatics algorithms for VaxMatch 3D:
+ * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
  * - Kabsch algorithm (SVD/Eigen-based optimal rotation and translation)
  * - TM-score calculation (Zhang & Skolnick standard formula)
@@ -825,7 +825,7 @@ export function generateSuperimposedPdb(
   t: number[]
 ): string {
   const lines: string[] = [];
-  lines.push('REMARK 200 VAXMATCH_3D SUPERIMPOSED CANDIDATE STRUCTURE');
+  lines.push('REMARK 200 SSBD_SUPERIMPOSED CANDIDATE STRUCTURE');
   lines.push(`REMARK 200 ROTATION MATRIX:`);
   lines.push(`REMARK 200   ${R[0].map(v => v.toFixed(6)).join('  ')}`);
   lines.push(`REMARK 200   ${R[1].map(v => v.toFixed(6)).join('  ')}`);
@@ -1270,7 +1270,7 @@ export function evaluateAntigenicMimicry(
     residues: residueList,
     reproducibility: {
       toolVersions: {
-        'VaxMatch-Engine': '1.0.0 (US-align/TM-align algorithm compatible)',
+        'SSBD-Engine': '1.0.0 (US-align/TM-align algorithm compatible)',
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       parameters: {

@@ -29,15 +29,17 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-black tracking-tight text-white flex items-center space-x-1.5">
-                <span>VaxMatch 3D</span>
-                <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono">
-                  SSEP_TEAM 씁뜩
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center space-x-2 flex-wrap">
+                <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
+                  2026 SSEP_TEAM SSBD(씁뜩)
+                </span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-indigo-300 font-mono">
+                  In Silico Vaccinology
                 </span>
               </h1>
             </div>
             <p className="text-[11px] text-slate-400">
-              병원체-백신 후보 물질 3D 항원 구조 모방도 비교 · 소논문 및 과학 탐구 활동 지원
+              병원체-백신 후보 물질 3D 항원 구조 모방도 비교 · 소논문 및 과학 탐구 활동 지원 시스템
             </p>
           </div>
         </div>

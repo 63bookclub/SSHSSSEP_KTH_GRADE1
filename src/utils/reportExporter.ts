@@ -76,7 +76,7 @@ export function generateReportHtml(
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>VaxMatch 3D - 백신 후보 물질 항원성 모방도 정밀 평가서</title>
+  <title>2026 SSEP_TEAM SSBD(씁뜩) - 백신 후보 물질 항원성 모방도 정밀 평가서</title>
   <style>
     @page {
       size: A4;
@@ -215,12 +215,12 @@ export function generateReportHtml(
 
   <div class="header-bar">
     <div>
-      <h1 class="header-title">VaxMatch 3D 항원성 모방도 정밀 분석 리포트</h1>
+      <h1 class="header-title">2026 SSEP_TEAM SSBD(씁뜩) 항원성 모방도 정밀 분석 리포트</h1>
       <div class="header-sub">Antigenic Mimicry & 3D Epitope Conformational Fitness Evaluation Report</div>
     </div>
     <div style="text-align: right; font-size: 10.5px; color: #64748b;">
       <div><strong>분석 일시:</strong> ${timestamp.substring(0, 19).replace('T', ' ')} UTC</div>
-      <div><strong>분석 엔진:</strong> VaxMatch Core v1.0.0 (Kabsch + TM-align + SASA)</div>
+      <div><strong>분석 엔진:</strong> SSBD Core v1.0.0 (Kabsch + TM-align + SASA)</div>
     </div>
   </div>
 
@@ -330,7 +330,7 @@ export function generateReportHtml(
   </div>
 
   <div style="margin-top: 16px; padding-top: 8px; border-top: 1px solid #cbd5e1; display: flex; justify-content: space-between; font-size: 10px; color: #64748b;">
-    <span>VaxMatch 3D Bioinformatics Platform • Deterministic In Silico Mimicry Evaluation</span>
+    <span>2026 SSEP_TEAM SSBD(씁뜩) Bioinformatics Platform • Deterministic In Silico Mimicry Evaluation</span>
     <span>Kabsch SVD + TM-score + Shrake-Rupley SASA Calculation</span>
   </div>
 </body>
@@ -503,7 +503,7 @@ export async function downloadPdfReport(
       srcY += pxPageHeight;
     }
 
-    pdf.save(`VaxMatch_Report_${Date.now()}.pdf`);
+    pdf.save(`SSBD_Report_${Date.now()}.pdf`);
   } catch (err) {
     console.error('PDF export error:', err);
     // Fallback: trigger print dialog if canvas capture fails
@@ -525,7 +525,7 @@ export function downloadHtmlReport(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `VaxMatch_Report_${Date.now()}.html`;
+  link.download = `SSBD_Report_${Date.now()}.html`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

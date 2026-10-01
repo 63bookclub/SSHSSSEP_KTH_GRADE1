@@ -1,5 +1,5 @@
 /**
- * Server-side AI insight generator for VaxMatch 3D.
+ * Server-side AI insight generator for 2026 SSEP_TEAM SSBD(씁뜩).
  * Communicates with high-throughput LLM endpoints (Groq API) securely from the backend.
  * Uses strict semantic tag rules ([HEADER], [SECTION: ...], [METRIC: ...], [EXPLAIN], [RECOMMEND], [DISCLAIMER])
  * to eliminate messy markdown symbols, LaTeX formatting, and truncation issues.
@@ -51,7 +51,7 @@ export async function generateAiInsight(data: AiInsightRequest): Promise<string>
 ★ 마크다운 특수기호(###, **, ***, ---, $, \\text{} 등)를 일절 사용하지 마십시오.
 ★ 오직 아래 지정된 정형 태그 규격만을 순서대로 사용하여 리포트를 작성하십시오:
 
-[HEADER]VaxMatch 3D 항원성 모방도 정밀 평가 보고서 - ${data.autoSettings.target_chain}체인 분석 요약[/HEADER]
+[HEADER]2026 SSEP_TEAM SSBD(씁뜩) 항원성 모방도 정밀 평가 보고서 - ${data.autoSettings.target_chain}체인 분석 요약[/HEADER]
 [SECTION: 1. 점수 체계의 구체적 의미와 생물학적 해석]
 [METRIC: 전체 골격 유사도 S_global ${(data.subScores.s_global * 100).toFixed(1)}%]
 [EXPLAIN]TM-score 수치가 의미하는 단백질 도메인 3D 폴딩 보존성과 스캐폴드 안정성 해설 (2~3문장)[/EXPLAIN]
@@ -100,7 +100,7 @@ export async function generateAiInsight(data: AiInsightRequest): Promise<string>
           messages: [
             {
               role: 'system',
-              content: '당신은 VaxMatch 3D의 전문 AI 분석관입니다. 마크다운 특수기호(###, **, ***, ---, $, 수식 기호)를 절대 쓰지 않고, 지정된 정형 태그([HEADER], [SECTION: ...], [METRIC: ...], [EXPLAIN], [RECOMMEND], [DISCLAIMER])만 사용하여 깔끔하고 완결된 문장으로 응답합니다.',
+              content: '당신은 2026 SSEP_TEAM SSBD(씁뜩)의 전문 AI 분석관입니다. 마크다운 특수기호(###, **, ***, ---, $, 수식 기호)를 절대 쓰지 않고, 지정된 정형 태그([HEADER], [SECTION: ...], [METRIC: ...], [EXPLAIN], [RECOMMEND], [DISCLAIMER])만 사용하여 깔끔하고 완결된 문장으로 응답합니다.',
             },
             {
               role: 'user',

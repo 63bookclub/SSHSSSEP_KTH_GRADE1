@@ -538,7 +538,7 @@ export default function App() {
       {/* Footer */}
       <footer className="mt-auto border-t border-slate-900 bg-slate-950/80 py-5 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2">
-          <span>VaxMatch 3D · SSEP_TEAM 씁뜩 개발 명세서 준수 시스템</span>
+          <span>2026 SSEP_TEAM SSBD(씁뜩) · 개발 명세서 준수 시스템</span>
           <span>US-align / TM-align Algorithm & Shrake-Rupley SASA Numerical Integration</span>
           <button
             onClick={() => setIsGlossaryOpen(true)}

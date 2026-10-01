@@ -1,4 +1,4 @@
-# 🧬 VaxMatch 3D (SSEP_TEAM 씁뜩)
+# 🧬 2026 SSEP_TEAM SSBD(씁뜩)
 
 > **병원체 단백질(타겟)과 백신 후보 물질의 3D 항원 구조 모방도 비교 및 소논문·과학 탐구 지원 시스템**  
 > *Computational Vaccinology In-Silico Antigenic Mimicry Superposition & Quantitative Evaluation Platform*
@@ -20,7 +20,7 @@
 
 ## 1. 프로젝트 소개 (Introduction)
 
-**VaxMatch 3D**는 감염병 병원체의 핵심 항원 단백질(예: SARS-CoV-2 스파이크 단백질 RBD)과 이를 표적하는 백신 후보 물질(단백질 서열 또는 3D 구조체) 간의 **3차원 구조적 모방도(Antigenic Mimicry)**를 원자 수준에서 정량적으로 비교·평가하는 전산 백신학(*In-Silico Vaccinology*) 웹 플랫폼입니다.
+**2026 SSEP_TEAM SSBD(씁뜩)**은 감염병 병원체의 핵심 항원 단백질(예: SARS-CoV-2 스파이크 단백질 RBD)과 이를 표적하는 백신 후보 물질(단백질 서열 또는 3D 구조체) 간의 **3차원 구조적 모방도(Antigenic Mimicry)**를 원자 수준에서 정량적으로 비교·평가하는 전산 백신학(*In-Silico Vaccinology*) 웹 플랫폼입니다.
 
 기존 서열 기반 분석(BLAST 등)이 포착하지 못하는 **불연속 입체 에피톱(Conformational Discontinuous Epitope)의 3차원 배치**, **용매 접근 표면적(SASA/RSA)**, **주요 결합 루프의 Cα 원자 편차**를 다각도로 평가하여, 고등학생 및 학부생의 소논문 작성, 과학 전람회, R&E 탐구 활동 및 예비 연구자들의 초기 백신 후보 선별(Screening)을 강력하게 지원합니다.
 
@@ -66,7 +66,7 @@
 
 ## 3. 수학적 모델 및 알고리즘 (Mathematical & Algorithmic Models)
 
-VaxMatch 3D는 단백질 간 3차원 구조 일치도를 판정하기 위해 다음의 4가지 하위 점수를 유기적으로 결합합니다.
+2026 SSEP_TEAM SSBD(씁뜩)는 단백질 간 3차원 구조 일치도를 판정하기 위해 다음의 4가지 하위 점수를 유기적으로 결합합니다.
 
 ### 📐 1. 종합 모방 적합도 (Composite Antigenic Mimicry Score)
 $$S_{total} = \left( w_{global} \cdot S_{global} + w_{epi} \cdot S_{epi} + w_{exp} \cdot S_{exp} + w_{conf} \cdot S_{conf} \right) \times 100$$
@@ -113,7 +113,7 @@ $$S_{conf} = \frac{N(\text{pLDDT} \ge 70.0)}{N_{total}}$$
 ## 4. 시스템 아키텍처 및 디렉토리 구조 (System Architecture)
 
 ```
-vaxmatch-3d/
+ssbd-2026/
 ├── server.ts                       # Express 백엔드 API 서버 (Vite 미들웨어 통합)
 ├── package.json                    # 프로젝트 의존성 및 스크립트 정의
 ├── metadata.json                   # AI Studio Applet 메타데이터 정의
@@ -188,7 +188,7 @@ npm install
 ```bash
 npm run dev
 ```
-브라우저에서 `http://localhost:3000`으로 접속하여 VaxMatch 3D를 실행합니다.
+브라우저에서 `http://localhost:3000`으로 접속하여 2026 SSEP_TEAM SSBD(씁뜩)을 실행합니다.
 
 ### 🏗️ 4. 프로덕션 빌드 및 실행
 ```bash
@@ -200,7 +200,7 @@ npm run start
 
 ## 7. 검증 실험실 및 벤치마크 (Validation Lab & Benchmarks)
 
-시스템 상단 우측의 **[검증 실험실]** 탭에서는 VaxMatch 3D의 코어 알고리즘이 이론적 기대치에 부합하는지 실시간으로 자가 검증(Verification)할 수 있습니다:
+시스템 상단 우측의 **[검증 실험실]** 탭에서는 2026 SSEP_TEAM SSBD(씁뜩)의 코어 알고리즘이 이론적 기대치에 부합하는지 실시간으로 자가 검증(Verification)할 수 있습니다:
 
 1. **양성 대조군 (Positive Control)**: 동일 구조 간 중첩 비교 ($S_{global} \ge 0.99$, $\text{RMSD} \approx 0.00\text{Å}$).
 2. **미세 변이군 (Variant Drift)**: 일부 에피톱 잔기 점돌연변이 발생 시 골격 점수는 유지되면서 에피톱 점수($S_{epi}$)만 선별적으로 감소하는지 검증.
@@ -227,7 +227,7 @@ npm run start
 
 ## 9. 기술적 과제 및 개선 로드맵 (Roadmap & Technical Roadmap)
 
-VaxMatch 3D의 분석 신뢰성 제고 및 프로덕션 안정화를 위한 향후 로드맵은 다음과 같습니다 (`FORCHANGE_JULES` 감사 기준):
+2026 SSEP_TEAM SSBD(씁뜩)의 분석 신뢰성 제고 및 프로덕션 안정화를 위한 향후 로드맵은 다음과 같습니다:
 
 1. **비동기 작업 큐 및 Worker Threads 분리**: 대형 단백질 DP 연산 시 메인 스레드 블로킹 방지 및 백그라운드 폴링 구조 고도화.
 2. **공식 US-align / TM-align CLI 바이너리 직접 연동**: 근사 휴리스틱을 넘어 공식 벤치마크 엔진과 $1:1$ 오차 대조표 제공.
@@ -237,6 +237,6 @@ VaxMatch 3D의 분석 신뢰성 제고 및 프로덕션 안정화를 위한 향�
 
 ---
 
-**개발 및 운영**: SSEP_TEAM 씁뜩  
+**개발 및 운영**: 2026 SSEP_TEAM SSBD(씁뜩)  
 **문의 및 기술 지원**: kimtaehohandsome@gmail.com  
 **라이선스**: MIT License

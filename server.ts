@@ -1286,7 +1286,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`VaxMatch 3D Server running on port ${PORT}`);
+    console.log(`2026 SSEP_TEAM SSBD(씁뜩) Server running on port ${PORT}`);
   });
 }
 

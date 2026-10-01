@@ -1,5 +1,5 @@
 /**
- * Client API services for VaxMatch 3D
+ * Client API services for 2026 SSEP_TEAM SSBD(씁뜩)
  */
 
 export interface TargetSubmission {

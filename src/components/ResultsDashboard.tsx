@@ -207,7 +207,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `VaxMatch_Residues_${Date.now()}.csv`);
+    link.setAttribute('download', `SSBD_Residues_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -614,7 +614,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
           <span>인용 제안: US-align (Zhang et al.), TM-score, Shrake-Rupley Numerical SASA Integration.</span>
-          <span className="font-mono">엔진: VaxMatch-Engine v1.0.0</span>
+          <span className="font-mono">엔진: SSBD-Engine v1.0.0</span>
         </div>
       </div>
 
