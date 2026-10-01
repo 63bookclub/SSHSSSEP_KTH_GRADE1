@@ -12,6 +12,8 @@ import {
   Dna,
   Target,
   ChevronRight,
+  Upload,
+  RotateCcw,
 } from 'lucide-react';
 import {
   CandidateEntity,
@@ -26,60 +28,231 @@ interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
 }
 
-const DEFAULT_EPITOPES: MultiEpitopeEntity[] = [
-  {
-    id: 'epi_1',
-    name: '에피톱 1: RBM 수용체 결합 모티프',
-    range: '437-508',
-    weight: 1.0,
-    color: '#e11d48',
-  },
-  {
-    id: 'epi_2',
-    name: '에피톱 2: 코어 결합 루프',
-    range: '365-390',
-    weight: 0.8,
-    color: '#f59e0b',
-  },
-];
+interface BatchPreset {
+  id: string;
+  title: string;
+  tag: string;
+  targetInput: string;
+  targetChain: string;
+  epitopes: MultiEpitopeEntity[];
+  candidates: CandidateEntity[];
+}
 
-const DEFAULT_CANDIDATES: CandidateEntity[] = [
+const BATCH_PRESETS: BatchPreset[] = [
   {
-    id: 'cand_1',
-    name: '후보 1: 야생형 (WT) Spike RBD',
-    type: 'sequence',
-    input: PRESET_BENCHMARKS[0].candidate.sequence,
+    id: 'covid-4variants',
+    title: '코로나-19 주요 변이주 & 인공단백질 (4종)',
+    tag: 'WT · Delta · Omicron · De Novo',
+    targetInput: '6M0J',
+    targetChain: 'E',
+    epitopes: [
+      {
+        id: 'epi_1',
+        name: '에피톱 1: RBM 수용체 결합 모티프',
+        range: '437-508',
+        weight: 1.0,
+        color: '#e11d48',
+      },
+      {
+        id: 'epi_2',
+        name: '에피톱 2: 코어 결합 루프',
+        range: '365-390',
+        weight: 0.8,
+        color: '#f59e0b',
+      },
+    ],
+    candidates: [
+      {
+        id: 'cand_1',
+        name: '후보 1: 야생형 (WT) Spike RBD',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[0]?.candidate.sequence || '',
+      },
+      {
+        id: 'cand_2',
+        name: '후보 2: 델타 변이 (Delta L452R/T478K)',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[1]?.candidate.sequence || '',
+      },
+      {
+        id: 'cand_3',
+        name: '후보 3: 오미크론 BA.1 변이 모방체',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[2]?.candidate.sequence || '',
+      },
+      {
+        id: 'cand_4',
+        name: '후보 4: 인공 설계 미니단백질 (De Novo)',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[3]?.candidate.sequence || '',
+      },
+    ],
   },
   {
-    id: 'cand_2',
-    name: '후보 2: 델타 변이 (Delta L452R/T478K)',
-    type: 'sequence',
-    input: PRESET_BENCHMARKS[1].candidate.sequence,
+    id: 'delta-vs-omicron',
+    title: '델타 vs 오미크론 변이 비교 (2종)',
+    tag: '우려 변이주(VOC) 모방도 대조',
+    targetInput: '6M0J',
+    targetChain: 'E',
+    epitopes: [
+      {
+        id: 'epi_1',
+        name: 'RBM 수용체 결합 부위',
+        range: '437-508',
+        weight: 1.0,
+        color: '#e11d48',
+      },
+    ],
+    candidates: [
+      {
+        id: 'cand_1',
+        name: '델타 변이체 (Delta RBD)',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[1]?.candidate.sequence || '',
+      },
+      {
+        id: 'cand_2',
+        name: '오미크론 변이체 (Omicron BA.1)',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[2]?.candidate.sequence || '',
+      },
+    ],
   },
   {
-    id: 'cand_3',
-    name: '후보 3: 오미크론 BA.1 변이 모방체',
-    type: 'sequence',
-    input: PRESET_BENCHMARKS[2].candidate.sequence,
-  },
-  {
-    id: 'cand_4',
-    name: '후보 4: 인공 설계 미니단백질 (De Novo)',
-    type: 'sequence',
-    input: PRESET_BENCHMARKS[3].candidate.sequence,
+    id: 'denovo-miniprotein',
+    title: '인공 미니단백질 설계 후보군 (2종)',
+    tag: 'De Novo 바인더 vs 야생형 RBD',
+    targetInput: '6M0J',
+    targetChain: 'E',
+    epitopes: [
+      {
+        id: 'epi_1',
+        name: 'ACE2 결합 접촉 에피톱',
+        range: '437-508',
+        weight: 1.0,
+        color: '#e11d48',
+      },
+    ],
+    candidates: [
+      {
+        id: 'cand_1',
+        name: '대조군: 야생형 Spike RBD',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[0]?.candidate.sequence || '',
+      },
+      {
+        id: 'cand_2',
+        name: '설계체: De Novo Miniprotein (LCB1)',
+        type: 'sequence',
+        input: PRESET_BENCHMARKS[3]?.candidate.sequence || '',
+      },
+    ],
   },
 ];
 
 export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspectCandidate }) => {
-  const [targetInput, setTargetInput] = useState<string>('6M0J');
+  // Target inputs
+  const [targetInput, setTargetInput] = useState<string>('');
   const [targetChain, setTargetChain] = useState<string>('E');
-  const [epitopes, setEpitopes] = useState<MultiEpitopeEntity[]>(DEFAULT_EPITOPES);
-  const [candidates, setCandidates] = useState<CandidateEntity[]>(DEFAULT_CANDIDATES);
+
+  // Multi-epitopes & Candidates
+  const [epitopes, setEpitopes] = useState<MultiEpitopeEntity[]>([
+    {
+      id: 'epi_1',
+      name: '에피톱 1: 중화 결합 부위',
+      range: '',
+      weight: 1.0,
+      color: '#e11d48',
+    },
+  ]);
+
+  const [candidates, setCandidates] = useState<CandidateEntity[]>([
+    {
+      id: 'cand_1',
+      name: '후보 1: 백신 후보 물질 A',
+      type: 'sequence',
+      input: '',
+    },
+    {
+      id: 'cand_2',
+      name: '후보 2: 백신 후보 물질 B',
+      type: 'sequence',
+      input: '',
+    },
+  ]);
+
   const [weights, setWeights] = useState<[number, number, number, number]>([0.25, 0.40, 0.20, 0.15]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchResponse, setBatchResponse] = useState<BatchAnalyzeResponse | null>(null);
+
+  // Apply a preset example with 1-click
+  const handleApplyPreset = (preset: BatchPreset) => {
+    setTargetInput(preset.targetInput);
+    setTargetChain(preset.targetChain);
+    setEpitopes(JSON.parse(JSON.stringify(preset.epitopes)));
+    setCandidates(JSON.parse(JSON.stringify(preset.candidates)));
+    setError(null);
+  };
+
+  // Reset all fields to clean slate for direct manual input
+  const handleResetClean = () => {
+    setTargetInput('');
+    setTargetChain('E');
+    setEpitopes([
+      {
+        id: `epi_${Date.now()}`,
+        name: '에피톱 1: 중화 결합 부위',
+        range: '',
+        weight: 1.0,
+        color: '#e11d48',
+      },
+    ]);
+    setCandidates([
+      {
+        id: `cand_${Date.now()}_1`,
+        name: '후보 1: 백신 후보 물질 A',
+        type: 'sequence',
+        input: '',
+      },
+      {
+        id: `cand_${Date.now()}_2`,
+        name: '후보 2: 백신 후보 물질 B',
+        type: 'sequence',
+        input: '',
+      },
+    ]);
+    setError(null);
+  };
+
+  // File upload for target
+  const handleTargetFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setTargetInput(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // File upload for a specific candidate
+  const handleCandidateFileUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        handleUpdateCandidate(id, 'input', text);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Add new epitope entity
   const handleAddEpitope = () => {
@@ -88,7 +261,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     const newEp: MultiEpitopeEntity = {
       id: `epi_${Date.now()}`,
       name: `에피톱 ${nextIdx}: 추가 항원 결정기`,
-      range: '400-420',
+      range: '',
       weight: 1.0,
       color: colors[(nextIdx - 1) % colors.length],
     };
@@ -113,7 +286,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
       id: `cand_${Date.now()}`,
       name: `후보 ${nextIdx}: 신규 백신 후보 물질`,
       type: 'sequence',
-      input: 'NLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKSTNLVKNKCVNF',
+      input: '',
     };
     setCandidates([...candidates, newCand]);
   };
@@ -129,16 +302,27 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     );
   };
 
-  // Run Batch Screening
+  // Run Batch Screening with validation
   const handleRunBatch = async () => {
-    setLoading(true);
     setError(null);
+    if (!targetInput.trim()) {
+      setError('타겟(Target) 단백질 입력값을 입력해 주세요. (PDB ID 또는 서열)');
+      return;
+    }
+
+    const validCandidates = candidates.filter((c) => c.input && c.input.trim().length > 0);
+    if (validCandidates.length === 0) {
+      setError('최소 1개 이상의 후보 물질에 아미노산 서열 또는 PDB를 입력해 주세요.');
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await batchAnalyze({
-        target_input: targetInput,
-        target_chain: targetChain,
+        target_input: targetInput.trim(),
+        target_chain: targetChain.trim() || undefined,
         multi_epitopes: epitopes,
-        candidates,
+        candidates: validCandidates,
         weights,
       });
       setBatchResponse(res);
@@ -220,28 +404,72 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
             <div>
               <h2 className="text-base font-bold text-white flex items-center space-x-2">
                 <span>다중 엔티티 일괄 스크리닝 (Multi-Entity Batch Screening & Leaderboard)</span>
-                <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full font-mono font-normal">
-                  High-Throughput In Silico Engine
-                </span>
               </h2>
               <p className="text-xs text-slate-400">
-                복수의 백신 후보 물질(Candidate Entities)과 다중 에피톱(Multi-Epitopes), 복합체 체인 엔티티를 한 번에 비교 분석합니다.
+                사용자가 타겟 단백질과 여러 백신 후보 물질을 직접 입력하여 항원 모방도를 비교하고 리더보드로 랭킹을 산출합니다.
               </p>
             </div>
           </div>
 
-          <button
-            onClick={handleRunBatch}
-            disabled={loading}
-            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition shadow-lg ${
-              loading
-                ? 'bg-cyan-900 text-cyan-300 cursor-wait'
-                : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-900/30'
-            }`}
-          >
-            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
-            <span>{loading ? '일괄 스크리닝 진행 중...' : `일괄 스크리닝 실행 (${candidates.length}개 후보)`}</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleResetClean}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition"
+              title="모든 입력 필드를 비우고 처음부터 직접 입력"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>새로 입력 (비우기)</span>
+            </button>
+
+            <button
+              onClick={handleRunBatch}
+              disabled={loading}
+              className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition shadow-lg ${
+                loading
+                  ? 'bg-cyan-900 text-cyan-300 cursor-wait'
+                  : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 shadow-cyan-900/30'
+              }`}
+            >
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
+              <span>{loading ? '일괄 스크리닝 진행 중...' : `일괄 스크리닝 실행 (${candidates.filter(c => c.input?.trim()).length}개 후보)`}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 2. Top Example Selector Bar (초간편 모드 스타일 예시 버튼) */}
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-300 flex items-center space-x-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+              <span>추천 스크리닝 예시 1-클릭 불러오기:</span>
+            </span>
+            <span className="text-[10px] text-slate-400">클릭 즉시 타겟과 후보군이 채워지며 자유롭게 수정할 수 있습니다</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {BATCH_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handleApplyPreset(preset)}
+                className="text-left p-2.5 rounded-lg bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition group flex flex-col justify-between"
+              >
+                <div>
+                  <div className="text-xs font-bold text-slate-200 group-hover:text-cyan-300 truncate">
+                    {preset.title}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                    {preset.tag}
+                  </div>
+                </div>
+                <div className="text-[10px] text-cyan-400 flex items-center justify-between mt-2 pt-1.5 border-t border-slate-800/60 font-mono">
+                  <span>타겟: {preset.targetInput} ({preset.targetChain}체인, {preset.candidates.length}종)</span>
+                  <span>적용 →</span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -251,13 +479,25 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         )}
 
-        {/* 2. Target & Chain Entity Config */}
+        {/* 3. Target & Chain Entity Config */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
-              <Target className="w-3.5 h-3.5 text-cyan-400" />
-              <span>타겟 구조 엔티티 (Target PDB ID 또는 UniProt)</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
+                <Target className="w-3.5 h-3.5 text-cyan-400" />
+                <span>타겟 구조 엔티티 (Target PDB ID 또는 서열)</span>
+              </label>
+              <label className="cursor-pointer text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center space-x-1">
+                <Upload className="w-3 h-3" />
+                <span>PDB/CIF 파일 업로드</span>
+                <input
+                  type="file"
+                  accept=".pdb,.cif,.ent,.txt"
+                  onChange={handleTargetFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
             <input
               type="text"
               value={targetInput}
@@ -281,19 +521,20 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         </div>
 
-        {/* 3. Multi-Epitope Entities Manager */}
+        {/* 4. Multi-Epitope Entities Manager */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Sparkles className="w-4 h-4 text-rose-400" />
-              <h3 className="text-xs font-bold text-white">다중 에피톱 엔티티 설정 (Multi-Epitope Entities: {epitopes.length}개)</h3>
+              <h3 className="text-xs font-bold text-white">에피톱 영역 설정 (선택 사항: 미입력 시 표면 노출 잔기 자동 분석)</h3>
             </div>
             <button
+              type="button"
               onClick={handleAddEpitope}
               className="flex items-center space-x-1 text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>에피톱 엔티티 추가</span>
+              <span>에피톱 추가</span>
             </button>
           </div>
 
@@ -310,6 +551,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                     value={ep.name}
                     onChange={(e) => handleUpdateEpitope(ep.id, 'name', e.target.value)}
                     className="w-full bg-transparent text-xs font-bold text-slate-200 border-b border-slate-800 pb-1 focus:outline-none focus:border-cyan-500"
+                    placeholder="에피톱 명칭"
                   />
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
@@ -339,6 +581,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
 
                 {epitopes.length > 1 && (
                   <button
+                    type="button"
                     onClick={() => handleRemoveEpitope(ep.id)}
                     className="text-slate-500 hover:text-rose-400 p-1 transition"
                   >
@@ -350,65 +593,84 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         </div>
 
-        {/* 4. Multi-Candidate Entities Manager */}
+        {/* 5. Multi-Candidate Entities Manager */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Dna className="w-4 h-4 text-amber-400" />
-              <h3 className="text-xs font-bold text-white">다중 백신 후보 물질 엔티티 (Candidate Entities: {candidates.length}개)</h3>
+              <h3 className="text-xs font-bold text-white">비교할 백신 후보 물질 목록 (Candidate Entities: {candidates.length}개)</h3>
             </div>
             <button
+              type="button"
               onClick={handleAddCandidate}
               className="flex items-center space-x-1 text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>후보 물질 엔티티 추가</span>
+              <span>후보 물질 추가</span>
             </button>
           </div>
 
-          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+          <div className="space-y-3">
             {candidates.map((cand, idx) => (
               <div
                 key={cand.id}
-                className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs"
+                className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-2.5 text-xs hover:border-slate-700 transition"
               >
-                <div className="flex items-center space-x-2 w-full md:w-56 shrink-0">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center font-bold text-[10px]">
-                    {idx + 1}
-                  </span>
-                  <input
-                    type="text"
-                    value={cand.name}
-                    onChange={(e) => handleUpdateCandidate(cand.id, 'name', e.target.value)}
-                    className="w-full bg-transparent font-bold text-slate-200 focus:outline-none focus:border-b focus:border-cyan-500"
-                  />
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                  <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
+                    <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center font-bold text-[10px]">
+                      {idx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={cand.name}
+                      onChange={(e) => handleUpdateCandidate(cand.id, 'name', e.target.value)}
+                      placeholder={`후보 ${idx + 1} 명칭`}
+                      className="bg-transparent font-bold text-slate-200 focus:outline-none focus:border-b focus:border-cyan-500 w-full"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <label className="cursor-pointer text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center space-x-1 px-2 py-1 rounded bg-slate-900 border border-slate-800">
+                      <Upload className="w-3 h-3" />
+                      <span>파일(PDB/FASTA) 불러오기</span>
+                      <input
+                        type="file"
+                        accept=".pdb,.fasta,.fa,.txt"
+                        onChange={(e) => handleCandidateFileUpload(cand.id, e)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {candidates.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCandidate(cand.id)}
+                        className="text-slate-500 hover:text-rose-400 p-1 transition"
+                        title="후보 삭제"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex-1 w-full">
-                  <input
-                    type="text"
+                <div className="w-full">
+                  <textarea
+                    rows={2}
                     value={cand.input}
                     onChange={(e) => handleUpdateCandidate(cand.id, 'input', e.target.value)}
-                    placeholder="아미노산 서열, PDB ID, 또는 PDB 원문 입력"
-                    className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 font-mono text-xs focus:outline-none focus:border-cyan-500 truncate"
+                    placeholder="아미노산 서열(FASTA/단일문자), PDB ID, 또는 PDB 구조 텍스트를 입력하거나 우측 파일 불러오기 클릭"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 font-mono text-xs focus:outline-none focus:border-cyan-500 resize-y"
                   />
                 </div>
-
-                {candidates.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveCandidate(cand.id)}
-                    className="text-slate-500 hover:text-rose-400 p-1.5 transition self-end md:self-center"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* 5. Batch Screening Results Leaderboard Table */}
+      {/* 6. Batch Screening Results Leaderboard Table */}
       {batchResponse && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">

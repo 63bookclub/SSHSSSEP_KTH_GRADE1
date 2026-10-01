@@ -1,11 +1,10 @@
 import React from 'react';
-import { Dna, BookOpen, Beaker, ChevronDown } from 'lucide-react';
-import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { Dna, BookOpen, Beaker } from 'lucide-react';
 
 interface HeaderProps {
   onOpenGlossary: () => void;
   onOpenValidationLab?: () => void;
-  onSelectPreset: (presetId: string) => void;
+  onSelectPreset?: (presetId: string) => void;
   activeTab: 'workflow' | 'validation';
   setActiveTab: (tab: 'workflow' | 'validation') => void;
 }
@@ -13,7 +12,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onOpenGlossary,
   onOpenValidationLab,
-  onSelectPreset,
   activeTab,
   setActiveTab,
 }) => {
@@ -32,9 +30,6 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center space-x-2 flex-wrap">
                 <span className="bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
                   2026 SSEP_TEAM SSBD(씁뜩)
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-indigo-300 font-mono">
-                  In Silico Vaccinology
                 </span>
               </h1>
             </div>
@@ -70,30 +65,6 @@ export const Header: React.FC<HeaderProps> = ({
               <Beaker className="w-3.5 h-3.5" />
               <span>검증 실험실 (명세서 11장)</span>
             </button>
-          </div>
-
-          {/* Preset fast selector */}
-          <div className="relative group">
-            <button className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-cyan-500/50 text-slate-300 font-medium transition">
-              <span>예제 불러오기</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:rotate-180 transition-transform" />
-            </button>
-
-            <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 hidden group-hover:block z-50">
-              <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                추천 탐구 벤치마크 프리셋
-              </div>
-              {PRESET_BENCHMARKS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => onSelectPreset(p.id)}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800 transition flex flex-col"
-                >
-                  <span className="text-xs font-semibold text-slate-200">{p.title}</span>
-                  <span className="text-[10px] text-cyan-400">{p.subtitle}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Glossary button */}
