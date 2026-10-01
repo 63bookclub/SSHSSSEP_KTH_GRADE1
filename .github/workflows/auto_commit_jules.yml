@@ -1,0 +1,31 @@
+name: Auto Commit Jules Changes
+
+on:
+  # Jules 작업이 끝나고 웹훅을 보내거나 특정 브랜치가 업데이트될 때 실행
+  push:
+    branches:
+      - jules-work-branch # 또는 main/dev 등 Jules가 작업을 반영하는 브랜치
+  workflow_dispatch: # 필요시 수동 실행도 가능
+
+jobs:
+  auto-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1. Jules가 만든 변경사항을 적용하거나 외부에서 동기화하는 로직
+      - name: Apply Jules Updates
+        run: |
+          # 예: Jules API 호출 또는 빌드 output 생성 스크립트 실행
+          echo "Applying Jules modifications..."
+
+      # 2. 변경사항 자동 커밋 & 푸시
+      - name: Commit and Push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "auto: apply changes from Jules [skip ci]"
+          branch: ${{ github.ref_name }}
+          commit_author: "Jules Bot <jules-bot@users.noreply.github.com>"
