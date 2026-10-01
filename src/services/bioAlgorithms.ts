@@ -15,6 +15,8 @@ export interface Atom {
   resName: string;
   chain: string;
   resSeq: number;
+  iCode?: string; // Insertion code (e.g. 'A', 'B', '')
+  altLoc?: string; // Alternate location indicator (e.g. 'A', 'B', '')
   x: number;
   y: number;
   z: number;
@@ -25,6 +27,8 @@ export interface Atom {
 
 export interface Residue {
   resSeq: number;
+  iCode?: string;
+  key: string; // Unique composite key e.g. "100" or "100A"
   resName: string;
   chain: string;
   caAtom: Atom | null;
@@ -93,7 +97,7 @@ const VDW_RADII: Record<string, number> = {
 export function parsePdb(pdbText: string): ParsedStructure {
   const lines = pdbText.split('\n');
   const allAtoms: Atom[] = [];
-  const residuesByChain: Record<string, Record<number, Residue>> = {};
+  const residuesByChain: Record<string, Record<string, Residue>> = {};
   const chainsSet = new Set<string>();
 
   for (const line of lines) {
@@ -107,9 +111,11 @@ export function parsePdb(pdbText: string): ParsedStructure {
 
       const serial = parseInt(line.substring(6, 11).trim(), 10) || 0;
       const name = line.substring(12, 16).trim();
+      const altLoc = line.length >= 17 ? line.substring(16, 17).trim() : '';
       const chain = line.substring(21, 22).trim() || 'A';
       const resSeq = parseInt(line.substring(22, 26).trim(), 10);
       if (isNaN(resSeq)) continue;
+      const iCode = line.length >= 27 ? line.substring(26, 27).trim() : '';
 
       const x = parseFloat(line.substring(30, 38).trim());
       const y = parseFloat(line.substring(38, 46).trim());
@@ -120,32 +126,61 @@ export function parsePdb(pdbText: string): ParsedStructure {
 
       if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
 
-      const atom: Atom = { serial, name, resName, chain, resSeq, x, y, z, occupancy, tempFactor, element };
-      allAtoms.push(atom);
-      chainsSet.add(chain);
+      const resKey = iCode ? `${resSeq}${iCode}` : `${resSeq}`;
 
       if (!residuesByChain[chain]) {
         residuesByChain[chain] = {};
       }
-      if (!residuesByChain[chain][resSeq]) {
-        residuesByChain[chain][resSeq] = {
+      if (!residuesByChain[chain][resKey]) {
+        residuesByChain[chain][resKey] = {
           resSeq,
+          iCode: iCode || undefined,
+          key: resKey,
           resName,
           chain,
           caAtom: null,
           atoms: [],
         };
       }
-      residuesByChain[chain][resSeq].atoms.push(atom);
-      if (name === 'CA') {
-        residuesByChain[chain][resSeq].caAtom = atom;
+
+      const existingRes = residuesByChain[chain][resKey];
+      // Filter out alternate locations (altLoc) secondary conformers (keep 'A', '1', or first seen)
+      if (altLoc && altLoc !== 'A' && altLoc !== '1') {
+        const hasMainAtom = existingRes.atoms.some(a => a.name === name);
+        if (hasMainAtom) continue;
+      }
+
+      const atom: Atom = {
+        serial,
+        name,
+        resName,
+        chain,
+        resSeq,
+        iCode: iCode || undefined,
+        altLoc: altLoc || undefined,
+        x,
+        y,
+        z,
+        occupancy,
+        tempFactor,
+        element,
+      };
+      allAtoms.push(atom);
+      chainsSet.add(chain);
+
+      existingRes.atoms.push(atom);
+      if (name === 'CA' && !existingRes.caAtom) {
+        existingRes.caAtom = atom;
       }
     }
   }
 
   const structuredChains: Record<string, Residue[]> = {};
   for (const chain of Object.keys(residuesByChain)) {
-    const list = Object.values(residuesByChain[chain]).sort((a, b) => a.resSeq - b.resSeq);
+    const list = Object.values(residuesByChain[chain]).sort((a, b) => {
+      if (a.resSeq !== b.resSeq) return a.resSeq - b.resSeq;
+      return (a.iCode || '').localeCompare(b.iCode || '');
+    });
     structuredChains[chain] = list;
   }
 
@@ -172,7 +207,7 @@ export function parseMmcif(cifText: string): ParsedStructure {
   let colMap: Record<string, number> = {};
   let colIdx = 0;
   const allAtoms: Atom[] = [];
-  const residuesByChain: Record<string, Record<number, Residue>> = {};
+  const residuesByChain: Record<string, Record<string, Residue>> = {};
   const chainsSet = new Set<string>();
 
   for (let i = 0; i < lines.length; i++) {
@@ -211,6 +246,14 @@ export function parseMmcif(cifText: string): ParsedStructure {
       const resSeq = parseInt(resSeqStr, 10);
       if (isNaN(resSeq)) continue;
 
+      const insCodeCol = colMap['pdbx_PDB_ins_code'] ?? colMap['label_ins_code'] ?? colMap['auth_ins_code'];
+      const rawICode = insCodeCol !== undefined ? tokens[insCodeCol] || '' : '';
+      const iCode = rawICode.replace(/['"?]/g, '').trim();
+
+      const altLocCol = colMap['label_alt_id'] ?? colMap['auth_alt_id'];
+      const rawAltLoc = altLocCol !== undefined ? tokens[altLocCol] || '' : '';
+      const altLoc = rawAltLoc.replace(/['"?]/g, '').trim();
+
       const x = parseFloat(tokens[colMap['Cartn_x'] ?? 10]);
       const y = parseFloat(tokens[colMap['Cartn_y'] ?? 11]);
       const z = parseFloat(tokens[colMap['Cartn_z'] ?? 12]);
@@ -221,12 +264,35 @@ export function parseMmcif(cifText: string): ParsedStructure {
 
       if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
 
+      const resKey = iCode ? `${resSeq}${iCode}` : `${resSeq}`;
+
+      if (!residuesByChain[chain]) residuesByChain[chain] = {};
+      if (!residuesByChain[chain][resKey]) {
+        residuesByChain[chain][resKey] = {
+          resSeq,
+          iCode: iCode || undefined,
+          key: resKey,
+          resName,
+          chain,
+          caAtom: null,
+          atoms: [],
+        };
+      }
+
+      const existingRes = residuesByChain[chain][resKey];
+      if (altLoc && altLoc !== 'A' && altLoc !== '1') {
+        const hasMainAtom = existingRes.atoms.some(a => a.name === name);
+        if (hasMainAtom) continue;
+      }
+
       const atom: Atom = {
         serial: allAtoms.length + 1,
         name,
         resName,
         chain,
         resSeq,
+        iCode: iCode || undefined,
+        altLoc: altLoc || undefined,
         x,
         y,
         z,
@@ -237,19 +303,9 @@ export function parseMmcif(cifText: string): ParsedStructure {
       allAtoms.push(atom);
       chainsSet.add(chain);
 
-      if (!residuesByChain[chain]) residuesByChain[chain] = {};
-      if (!residuesByChain[chain][resSeq]) {
-        residuesByChain[chain][resSeq] = {
-          resSeq,
-          resName,
-          chain,
-          caAtom: null,
-          atoms: [],
-        };
-      }
-      residuesByChain[chain][resSeq].atoms.push(atom);
-      if (name === 'CA') {
-        residuesByChain[chain][resSeq].caAtom = atom;
+      existingRes.atoms.push(atom);
+      if (name === 'CA' && !existingRes.caAtom) {
+        existingRes.caAtom = atom;
       }
     }
   }
@@ -261,7 +317,10 @@ export function parseMmcif(cifText: string): ParsedStructure {
 
   const structuredChains: Record<string, Residue[]> = {};
   for (const chain of Object.keys(residuesByChain)) {
-    structuredChains[chain] = Object.values(residuesByChain[chain]).sort((a, b) => a.resSeq - b.resSeq);
+    structuredChains[chain] = Object.values(residuesByChain[chain]).sort((a, b) => {
+      if (a.resSeq !== b.resSeq) return a.resSeq - b.resSeq;
+      return (a.iCode || '').localeCompare(b.iCode || '');
+    });
   }
 
   // Generate clean PDB representation for 3Dmol viewer
@@ -272,13 +331,14 @@ export function parseMmcif(cifText: string): ParsedStructure {
     const rStr = at.resName.padEnd(3);
     const cStr = at.chain.substring(0, 1);
     const seqStr = at.resSeq.toString().padStart(4);
+    const iCodeStr = (at.iCode || ' ').substring(0, 1);
     const xStr = at.x.toFixed(3).padStart(8);
     const yStr = at.y.toFixed(3).padStart(8);
     const zStr = at.z.toFixed(3).padStart(8);
     const occStr = at.occupancy.toFixed(2).padStart(6);
     const bStr = at.tempFactor.toFixed(2).padStart(6);
     const elemStr = (at.element || at.name[0]).padStart(2);
-    pdbLines.push(`ATOM  ${sStr} ${nStr} ${rStr} ${cStr}${seqStr}    ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`);
+    pdbLines.push(`ATOM  ${sStr} ${nStr} ${rStr} ${cStr}${seqStr}${iCodeStr}   ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`);
   }
   pdbLines.push('TER');
   pdbLines.push('END');
@@ -844,6 +904,7 @@ export function generateSuperimposedPdb(
       const resNamePadded = at.resName.padEnd(3);
       const serialStr = serial.toString().padStart(5);
       const resSeqStr = at.resSeq.toString().padStart(4);
+      const iCodeStr = (at.iCode || ' ').substring(0, 1);
       const cStr = candChain.substring(0, 1);
       const xStr = rx.toFixed(3).padStart(8);
       const yStr = ry.toFixed(3).padStart(8);
@@ -852,7 +913,7 @@ export function generateSuperimposedPdb(
       const bStr = (at.tempFactor ?? 80.0).toFixed(2).padStart(6);
       const elemStr = (at.element || at.name[0]).padStart(2);
 
-      const pdbLine = `ATOM  ${serialStr} ${namePadded} ${resNamePadded} ${cStr}${resSeqStr}    ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`;
+      const pdbLine = `ATOM  ${serialStr} ${namePadded} ${resNamePadded} ${cStr}${resSeqStr}${iCodeStr}   ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`;
       lines.push(pdbLine);
       serial++;
     }
@@ -908,6 +969,83 @@ export function extractComplexContacts(
   }
 
   return Array.from(contactResSeqs).sort((a, b) => a - b);
+}
+
+/**
+ * Maps residue sequence numbers (or residue keys) from a source structure (e.g. complex antigen chain)
+ * to a target structure using Needleman-Wunsch sequence alignment.
+ * Solves numbering discrepancy (SIFTS/numbering mismatch) between complex PDB and target structure.
+ */
+export function mapResiduesBySequence(
+  sourceResidues: Residue[],
+  targetResidues: Residue[],
+  sourceContactSeqs: (number | string)[]
+): number[] {
+  if (sourceResidues.length === 0 || targetResidues.length === 0) {
+    return sourceContactSeqs.map(s => typeof s === 'number' ? s : parseInt(s, 10)).filter(n => !isNaN(n));
+  }
+
+  const sourceSet = new Set(sourceContactSeqs.map(s => String(s)));
+
+  const M = sourceResidues.length;
+  const N = targetResidues.length;
+
+  const dp: number[][] = Array(M + 1).fill(0).map(() => Array(N + 1).fill(0));
+  const pointer: number[][] = Array(M + 1).fill(0).map(() => Array(N + 1).fill(0)); // 1: diag, 2: up, 3: left
+
+  const gapPenalty = -1.0;
+  for (let i = 0; i <= M; i++) dp[i][0] = i * gapPenalty;
+  for (let j = 0; j <= N; j++) dp[0][j] = j * gapPenalty;
+
+  for (let i = 1; i <= M; i++) {
+    for (let j = 1; j <= N; j++) {
+      const srcAa = AA3_TO_1[sourceResidues[i - 1].resName] || 'X';
+      const tgtAa = AA3_TO_1[targetResidues[j - 1].resName] || 'X';
+      const matchScore = srcAa === tgtAa && srcAa !== 'X' ? 2.5 : (srcAa === tgtAa ? 1.0 : -0.5);
+
+      const scoreDiag = dp[i - 1][j - 1] + matchScore;
+      const scoreUp = dp[i - 1][j] + gapPenalty;
+      const scoreLeft = dp[i][j - 1] + gapPenalty;
+
+      let maxVal = scoreDiag;
+      let dir = 1;
+      if (scoreUp > maxVal) {
+        maxVal = scoreUp;
+        dir = 2;
+      }
+      if (scoreLeft > maxVal) {
+        maxVal = scoreLeft;
+        dir = 3;
+      }
+      dp[i][j] = maxVal;
+      pointer[i][j] = dir;
+    }
+  }
+
+  const mappedTargetResSeqs = new Set<number>();
+  let i = M;
+  let j = N;
+
+  while (i > 0 && j > 0) {
+    const dir = pointer[i][j];
+    if (dir === 1) { // Diag match/mismatch
+      const srcRes = sourceResidues[i - 1];
+      const tgtRes = targetResidues[j - 1];
+      const srcKey = srcRes.key || (srcRes.iCode ? `${srcRes.resSeq}${srcRes.iCode}` : String(srcRes.resSeq));
+
+      if (sourceSet.has(srcKey) || sourceSet.has(String(srcRes.resSeq))) {
+        mappedTargetResSeqs.add(tgtRes.resSeq);
+      }
+      i--;
+      j--;
+    } else if (dir === 2) { // Up
+      i--;
+    } else { // Left
+      j--;
+    }
+  }
+
+  return Array.from(mappedTargetResSeqs).sort((a, b) => a - b);
 }
 
 /**
