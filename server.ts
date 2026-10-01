@@ -327,7 +327,14 @@ app.post('/api/v1/epitopes', async (req, res) => {
           .filter(Boolean);
         const agChain = antigen_chain || target_chain;
 
-        resolvedResidues = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+        resolvedResidues = extractComplexContacts(
+          complexStruct,
+          agChain,
+          abChains,
+          4.5,
+          target.structure,
+          target_chain
+        );
       } catch (cErr: any) {
         // Fallback to manual range or known contact residue ranges
         if (manual_range) {
