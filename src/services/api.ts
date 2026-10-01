@@ -38,7 +38,7 @@ export interface EpitopeResponse {
   method: string;
   is_temporary: boolean;
   residues_count: number;
-  residues: number[];
+  residues: (number | string)[];
   note: string;
 }
 
@@ -96,8 +96,8 @@ export interface JobResultData {
     final_fitness_score: number;
     evaluation_rationale: string;
     residues: {
-      res_id: number;
-      cand_res_id?: number;
+      res_id: number | string;
+      cand_res_id?: number | string;
       res_name?: string;
       in_epitope: boolean;
       distance: number;
@@ -194,7 +194,7 @@ export interface MultiEpitopeEntity {
   range: string;
   weight: number;
   color?: string;
-  residues?: number[];
+  residues?: (number | string)[];
   sEpi?: number;
   rmsd?: number;
 }

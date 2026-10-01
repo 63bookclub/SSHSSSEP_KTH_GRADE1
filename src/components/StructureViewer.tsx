@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Layers, Eye, EyeOff, Sparkles, RefreshCcw } from 'lucide-react';
 
 interface ResidueDev {
-  res_id: number;
-  cand_res_id?: number;
+  res_id: number | string;
+  cand_res_id?: number | string;
   distance: number;
   in_epitope: boolean;
 }
@@ -13,7 +13,7 @@ interface StructureViewerProps {
   candidatePdb?: string;
   targetChain?: string;
   candidateChain?: string;
-  epitopeResidues?: number[];
+  epitopeResidues?: (number | string)[];
   multiEpitopes?: { id: string; name: string; range: string; color: string }[];
   residueDeviations?: ResidueDev[];
   height?: string;
@@ -26,15 +26,17 @@ declare global {
   }
 }
 
-const parseRangeList = (rangeStr?: string): number[] => {
+const parseRangeList = (rangeStr?: string): (number | string)[] => {
   if (!rangeStr) return [];
-  const result: number[] = [];
+  const result: (number | string)[] = [];
   const parts = rangeStr.split(/[,;\s]+/);
   for (const p of parts) {
     const trimmed = p.trim();
     if (!trimmed) continue;
     if (trimmed.includes('-')) {
-      const [s, e] = trimmed.split('-').map((v) => parseInt(v, 10));
+      const splitted = trimmed.split('-');
+      const s = parseInt(splitted[0], 10);
+      const e = parseInt(splitted[1], 10);
       if (!isNaN(s) && !isNaN(e)) {
         const start = Math.min(s, e);
         const end = Math.max(s, e);
@@ -44,7 +46,11 @@ const parseRangeList = (rangeStr?: string): number[] => {
       }
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) result.push(num);
+      if (!isNaN(num) && num.toString() === trimmed) {
+        result.push(num);
+      } else {
+        result.push(trimmed);
+      }
     }
   }
   return result;

@@ -15,6 +15,8 @@ export interface Atom {
   resName: string;
   chain: string;
   resSeq: number;
+  iCode?: string;
+  altLoc?: string;
   x: number;
   y: number;
   z: number;
@@ -25,12 +27,19 @@ export interface Atom {
 
 export interface Residue {
   resSeq: number;
+  iCode?: string;
+  resKey: string; // Composite key, e.g. "100" or "100A"
   resName: string;
   chain: string;
   caAtom: Atom | null;
   atoms: Atom[];
   sasa?: number;
   rsa?: number;
+}
+
+export function getResidueKey(resSeq: number, iCode?: string): string {
+  const code = (iCode || '').trim();
+  return code ? `${resSeq}${code}` : `${resSeq}`;
 }
 
 export interface ParsedStructure {
@@ -93,7 +102,7 @@ const VDW_RADII: Record<string, number> = {
 export function parsePdb(pdbText: string): ParsedStructure {
   const lines = pdbText.split('\n');
   const allAtoms: Atom[] = [];
-  const residuesByChain: Record<string, Record<number, Residue>> = {};
+  const residuesByChain: Record<string, Record<string, Residue>> = {};
   const chainsSet = new Set<string>();
 
   for (const line of lines) {
@@ -105,11 +114,21 @@ export function parsePdb(pdbText: string): ParsedStructure {
         continue;
       }
 
+      // Handle alternate location indicator (altLoc) at col 17 (index 16)
+      const altLoc = line.length >= 17 ? line.substring(16, 17).trim() : '';
+      if (altLoc && altLoc !== 'A' && altLoc !== '1') {
+        continue; // Skip secondary conformers to avoid duplicate atom positions
+      }
+
       const serial = parseInt(line.substring(6, 11).trim(), 10) || 0;
       const name = line.substring(12, 16).trim();
       const chain = line.substring(21, 22).trim() || 'A';
       const resSeq = parseInt(line.substring(22, 26).trim(), 10);
       if (isNaN(resSeq)) continue;
+
+      // Handle insertion code (iCode) at col 27 (index 26)
+      const iCode = line.length >= 27 ? line.substring(26, 27).trim() : '';
+      const resKey = getResidueKey(resSeq, iCode);
 
       const x = parseFloat(line.substring(30, 38).trim());
       const y = parseFloat(line.substring(38, 46).trim());
@@ -120,32 +139,51 @@ export function parsePdb(pdbText: string): ParsedStructure {
 
       if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
 
-      const atom: Atom = { serial, name, resName, chain, resSeq, x, y, z, occupancy, tempFactor, element };
+      const atom: Atom = {
+        serial,
+        name,
+        resName,
+        chain,
+        resSeq,
+        iCode: iCode || undefined,
+        altLoc: altLoc || undefined,
+        x,
+        y,
+        z,
+        occupancy,
+        tempFactor,
+        element,
+      };
       allAtoms.push(atom);
       chainsSet.add(chain);
 
       if (!residuesByChain[chain]) {
         residuesByChain[chain] = {};
       }
-      if (!residuesByChain[chain][resSeq]) {
-        residuesByChain[chain][resSeq] = {
+      if (!residuesByChain[chain][resKey]) {
+        residuesByChain[chain][resKey] = {
           resSeq,
+          iCode: iCode || undefined,
+          resKey,
           resName,
           chain,
           caAtom: null,
           atoms: [],
         };
       }
-      residuesByChain[chain][resSeq].atoms.push(atom);
+      residuesByChain[chain][resKey].atoms.push(atom);
       if (name === 'CA') {
-        residuesByChain[chain][resSeq].caAtom = atom;
+        residuesByChain[chain][resKey].caAtom = atom;
       }
     }
   }
 
   const structuredChains: Record<string, Residue[]> = {};
   for (const chain of Object.keys(residuesByChain)) {
-    const list = Object.values(residuesByChain[chain]).sort((a, b) => a.resSeq - b.resSeq);
+    const list = Object.values(residuesByChain[chain]).sort((a, b) => {
+      if (a.resSeq !== b.resSeq) return a.resSeq - b.resSeq;
+      return (a.iCode || '').localeCompare(b.iCode || '');
+    });
     structuredChains[chain] = list;
   }
 
@@ -172,7 +210,7 @@ export function parseMmcif(cifText: string): ParsedStructure {
   let colMap: Record<string, number> = {};
   let colIdx = 0;
   const allAtoms: Atom[] = [];
-  const residuesByChain: Record<string, Record<number, Residue>> = {};
+  const residuesByChain: Record<string, Record<string, Residue>> = {};
   const chainsSet = new Set<string>();
 
   for (let i = 0; i < lines.length; i++) {
@@ -206,10 +244,22 @@ export function parseMmcif(cifText: string): ParsedStructure {
       const resName = (tokens[colMap['auth_comp_id'] ?? colMap['label_comp_id'] ?? 5] || 'UNK').replace(/['"]/g, '');
       if (groupPDB === 'HETATM' && (resName === 'HOH' || resName === 'WAT')) continue;
 
+      // Filter alternate location indicator (altLoc)
+      const altLocToken = (tokens[colMap['label_alt_id'] ?? colMap['auth_alt_id'] ?? -1] || '').replace(/['"]/g, '').trim();
+      const altLoc = (altLocToken === '.' || altLocToken === '?') ? '' : altLocToken;
+      if (altLoc && altLoc !== 'A' && altLoc !== '1') {
+        continue;
+      }
+
       const chain = (tokens[colMap['auth_asym_id'] ?? colMap['label_asym_id'] ?? 6] || 'A').replace(/['"]/g, '');
       const resSeqStr = tokens[colMap['auth_seq_id'] ?? colMap['label_seq_id'] ?? 8];
       const resSeq = parseInt(resSeqStr, 10);
       if (isNaN(resSeq)) continue;
+
+      // Insertion code (iCode)
+      const rawICode = (tokens[colMap['pdbx_PDB_ins_code'] ?? colMap['label_ins_code'] ?? colMap['auth_ins_code'] ?? -1] || '').replace(/['"]/g, '').trim();
+      const iCode = (rawICode === '.' || rawICode === '?') ? '' : rawICode;
+      const resKey = getResidueKey(resSeq, iCode);
 
       const x = parseFloat(tokens[colMap['Cartn_x'] ?? 10]);
       const y = parseFloat(tokens[colMap['Cartn_y'] ?? 11]);
@@ -227,6 +277,8 @@ export function parseMmcif(cifText: string): ParsedStructure {
         resName,
         chain,
         resSeq,
+        iCode: iCode || undefined,
+        altLoc: altLoc || undefined,
         x,
         y,
         z,
@@ -238,18 +290,20 @@ export function parseMmcif(cifText: string): ParsedStructure {
       chainsSet.add(chain);
 
       if (!residuesByChain[chain]) residuesByChain[chain] = {};
-      if (!residuesByChain[chain][resSeq]) {
-        residuesByChain[chain][resSeq] = {
+      if (!residuesByChain[chain][resKey]) {
+        residuesByChain[chain][resKey] = {
           resSeq,
+          iCode: iCode || undefined,
+          resKey,
           resName,
           chain,
           caAtom: null,
           atoms: [],
         };
       }
-      residuesByChain[chain][resSeq].atoms.push(atom);
+      residuesByChain[chain][resKey].atoms.push(atom);
       if (name === 'CA') {
-        residuesByChain[chain][resSeq].caAtom = atom;
+        residuesByChain[chain][resKey].caAtom = atom;
       }
     }
   }
@@ -261,7 +315,10 @@ export function parseMmcif(cifText: string): ParsedStructure {
 
   const structuredChains: Record<string, Residue[]> = {};
   for (const chain of Object.keys(residuesByChain)) {
-    structuredChains[chain] = Object.values(residuesByChain[chain]).sort((a, b) => a.resSeq - b.resSeq);
+    structuredChains[chain] = Object.values(residuesByChain[chain]).sort((a, b) => {
+      if (a.resSeq !== b.resSeq) return a.resSeq - b.resSeq;
+      return (a.iCode || '').localeCompare(b.iCode || '');
+    });
   }
 
   // Generate clean PDB representation for 3Dmol viewer
@@ -272,13 +329,14 @@ export function parseMmcif(cifText: string): ParsedStructure {
     const rStr = at.resName.padEnd(3);
     const cStr = at.chain.substring(0, 1);
     const seqStr = at.resSeq.toString().padStart(4);
+    const iCodeChar = (at.iCode || ' ').substring(0, 1);
     const xStr = at.x.toFixed(3).padStart(8);
     const yStr = at.y.toFixed(3).padStart(8);
     const zStr = at.z.toFixed(3).padStart(8);
     const occStr = at.occupancy.toFixed(2).padStart(6);
     const bStr = at.tempFactor.toFixed(2).padStart(6);
     const elemStr = (at.element || at.name[0]).padStart(2);
-    pdbLines.push(`ATOM  ${sStr} ${nStr} ${rStr} ${cStr}${seqStr}    ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`);
+    pdbLines.push(`ATOM  ${sStr} ${nStr} ${rStr} ${cStr}${seqStr}${iCodeChar}   ${xStr}${yStr}${zStr}${occStr}${bStr}          ${elemStr}`);
   }
   pdbLines.push('TER');
   pdbLines.push('END');
@@ -386,8 +444,10 @@ export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints 
  */
 export interface AlignedPair {
   targetResSeq: number;
+  targetResKey: string;
   targetResName: string;
   candResSeq: number;
+  candResKey: string;
   candResName: string;
   distance: number;
   targetCa: Atom;
@@ -775,8 +835,10 @@ export function alignStructures(
 
     alignedPairs.push({
       targetResSeq: tRes.resSeq,
+      targetResKey: tRes.resKey || getResidueKey(tRes.resSeq, tRes.iCode),
       targetResName: tRes.resName,
       candResSeq: cRes.resSeq,
+      candResKey: cRes.resKey || getResidueKey(cRes.resSeq, cRes.iCode),
       candResName: cRes.resName,
       distance: dist,
       targetCa: tc,
@@ -872,7 +934,7 @@ export function extractComplexContacts(
   antigenChain: string,
   antibodyChains: string[],
   cutoff = 4.5
-): number[] {
+): (number | string)[] {
   const agResidues = structure.residuesByChain[antigenChain] || [];
   const abAtoms: Atom[] = [];
 
@@ -887,7 +949,7 @@ export function extractComplexContacts(
     return [];
   }
 
-  const contactResSeqs = new Set<number>();
+  const contactResKeys = new Set<string>();
   const cutoffSq = cutoff * cutoff;
 
   for (const agRes of agResidues) {
@@ -898,7 +960,7 @@ export function extractComplexContacts(
         const dy = agAtom.y - abAtom.y;
         const dz = agAtom.z - abAtom.z;
         if (dx * dx + dy * dy + dz * dz <= cutoffSq) {
-          contactResSeqs.add(agRes.resSeq);
+          contactResKeys.add(agRes.resKey || getResidueKey(agRes.resSeq, agRes.iCode));
           isContact = true;
           break;
         }
@@ -907,14 +969,17 @@ export function extractComplexContacts(
     }
   }
 
-  return Array.from(contactResSeqs).sort((a, b) => a - b);
+  return agResidues
+    .filter(r => contactResKeys.has(r.resKey || getResidueKey(r.resSeq, r.iCode)))
+    .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
 }
 
 /**
- * Parse manual residue ranges such as "330-520, 614, 484"
+ * Parse manual residue ranges such as "330-520, 614, 484, 100A"
  */
-export function parseResidueRange(input: string): number[] {
-  const result = new Set<number>();
+export function parseResidueRange(input: string): (number | string)[] {
+  const result: (number | string)[] = [];
+  const resultSet = new Set<string>();
   const parts = input.split(/[,;\s]+/);
   for (const part of parts) {
     const trimmed = part.trim();
@@ -926,15 +991,28 @@ export function parseResidueRange(input: string): number[] {
       if (!isNaN(start) && !isNaN(end)) {
         const [low, high] = start <= end ? [start, end] : [end, start];
         for (let r = low; r <= high; r++) {
-          result.add(r);
+          if (!resultSet.has(r.toString())) {
+            resultSet.add(r.toString());
+            result.push(r);
+          }
         }
       }
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) result.add(num);
+      if (!isNaN(num) && num.toString() === trimmed) {
+        if (!resultSet.has(num.toString())) {
+          resultSet.add(num.toString());
+          result.push(num);
+        }
+      } else {
+        if (!resultSet.has(trimmed)) {
+          resultSet.add(trimmed);
+          result.push(trimmed);
+        }
+      }
     }
   }
-  return Array.from(result).sort((a, b) => a - b);
+  return result;
 }
 
 /**
@@ -951,7 +1029,7 @@ export interface MultiEpitopeEntity {
   range: string;
   weight: number;
   color?: string;
-  residues?: number[];
+  residues?: (number | string)[];
   sEpi?: number;
   rmsd?: number;
 }
@@ -990,8 +1068,8 @@ export interface EvaluationResult {
     color: string;
   }[];
   residues: {
-    res_id: number;
-    cand_res_id?: number;
+    res_id: number | string;
+    cand_res_id?: number | string;
     res_name: string;
     in_epitope: boolean;
     epitope_id?: string;
@@ -1010,7 +1088,7 @@ export interface EvaluationResult {
 
 export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
-  epitopeResidues: number[],
+  epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
   customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
@@ -1019,37 +1097,39 @@ export function evaluateAntigenicMimicry(
 ): EvaluationResult {
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
-  const targetMap = new Map<number, Residue>();
+  const targetMap = new Map<string, Residue>();
   for (const r of targetResidues) {
-    targetMap.set(r.resSeq, r);
+    targetMap.set(r.resKey || getResidueKey(r.resSeq, r.iCode), r);
   }
 
-  const candMap = new Map<number, Residue>();
+  const candMap = new Map<string, Residue>();
   for (const r of candResidues) {
-    candMap.set(r.resSeq, r);
+    candMap.set(r.resKey || getResidueKey(r.resSeq, r.iCode), r);
   }
 
-  const pairByTargetRes = new Map<number, AlignedPair>();
+  const pairByTargetRes = new Map<string, AlignedPair>();
   for (const p of alignedPairs) {
-    pairByTargetRes.set(p.targetResSeq, p);
+    const key = p.targetResKey || p.targetResSeq.toString();
+    pairByTargetRes.set(key, p);
   }
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
   // Epitope mapping for multi-epitope entities
-  const resToEpitopeId = new Map<number, string>();
-  let effectiveEpitopeSet = new Set<number>();
+  const resToEpitopeId = new Map<string, string>();
+  let effectiveEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
       resList.forEach((rSeq) => {
-        resToEpitopeId.set(rSeq, ep.id);
-        effectiveEpitopeSet.add(rSeq);
+        const key = rSeq.toString();
+        resToEpitopeId.set(key, ep.id);
+        effectiveEpitopeSet.add(key);
       });
     });
   } else {
-    effectiveEpitopeSet = new Set(epitopeResidues);
+    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1057,7 +1137,9 @@ export function evaluateAntigenicMimicry(
   if (effectiveEpitopeSet.size === 0) {
     isTemporary = true;
     effectiveEpitopeSet = new Set(
-      targetResidues.filter(r => (r.rsa || 0) >= 0.2).map(r => r.resSeq)
+      targetResidues
+        .filter(r => (r.rsa || 0) >= 0.2)
+        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
     );
   }
 
@@ -1069,14 +1151,14 @@ export function evaluateAntigenicMimicry(
   let totalEpitopeCount = effectiveEpitopeSet.size;
 
   for (const targetRes of targetResidues) {
-    const resSeq = targetRes.resSeq;
-    const inEpi = effectiveEpitopeSet.has(resSeq);
-    const epId = resToEpitopeId.get(resSeq);
-    const pair = pairByTargetRes.get(resSeq);
+    const tKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
+    const inEpi = effectiveEpitopeSet.has(tKey) || effectiveEpitopeSet.has(targetRes.resSeq.toString());
+    const epId = resToEpitopeId.get(tKey) || resToEpitopeId.get(targetRes.resSeq.toString());
+    const pair = pairByTargetRes.get(tKey) || pairByTargetRes.get(targetRes.resSeq.toString());
 
     const dist = pair ? pair.distance : 999.0;
     const rsaT = targetRes.rsa ?? 0.0;
-    const candRes = pair ? candMap.get(pair.candResSeq) : null;
+    const candRes = pair ? candMap.get(pair.candResKey) : null;
     const rsaC = candRes?.rsa ?? 0.0;
     const plddtVal = pair ? (pair.plddt || 80.0) : 0.0;
 
@@ -1084,8 +1166,8 @@ export function evaluateAntigenicMimicry(
     const sim = pair ? 1 / (1 + (dist / 3.0) ** 2) : 0.0;
 
     residueList.push({
-      res_id: resSeq,
-      cand_res_id: pair ? pair.candResSeq : undefined,
+      res_id: tKey,
+      cand_res_id: pair ? pair.candResKey : undefined,
       res_name: targetRes.resName,
       in_epitope: inEpi,
       epitope_id: epId,
@@ -1128,7 +1210,8 @@ export function evaluateAntigenicMimicry(
       const epDists: number[] = [];
 
       for (const rSeq of epSet) {
-        const pair = pairByTargetRes.get(rSeq);
+        const key = rSeq.toString();
+        const pair = pairByTargetRes.get(key);
         if (pair) {
           epDists.push(pair.distance);
         } else {
