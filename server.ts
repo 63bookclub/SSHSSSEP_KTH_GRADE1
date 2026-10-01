@@ -7,6 +7,7 @@ import {
   alignStructures,
   generateSuperimposedPdb,
   extractComplexContacts,
+  mapResiduesBySequence,
   parseResidueRange,
   evaluateAntigenicMimicry,
   threadSequenceOnTemplate,
@@ -327,7 +328,11 @@ app.post('/api/v1/epitopes', async (req, res) => {
           .filter(Boolean);
         const agChain = antigen_chain || target_chain;
 
-        resolvedResidues = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+        const rawContactSeqs = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+        const complexAgResidues = complexStruct.residuesByChain[agChain] || Object.values(complexStruct.residuesByChain)[0] || [];
+        const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
+
+        resolvedResidues = mapResiduesBySequence(complexAgResidues, targetResidues, rawContactSeqs);
       } catch (cErr: any) {
         // Fallback to manual range or known contact residue ranges
         if (manual_range) {
