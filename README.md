@@ -1,0 +1,242 @@
+# 🧬 VaxMatch 3D (SSEP_TEAM 씁뜩)
+
+> **병원체 단백질(타겟)과 백신 후보 물질의 3D 항원 구조 모방도 비교 및 소논문·과학 탐구 지원 시스템**  
+> *Computational Vaccinology In-Silico Antigenic Mimicry Superposition & Quantitative Evaluation Platform*
+
+---
+
+## 📌 목차 (Table of Contents)
+1. [프로젝트 소개 (Introduction)](#1-프로젝트-소개-introduction)
+2. [핵심 기능 (Key Features)](#2-핵심-기능-key-features)
+3. [수학적 모델 및 알고리즘 (Mathematical & Algorithmic Models)](#3-수학적-모델-및-알고리즘-mathematical--algorithmic-models)
+4. [시스템 아키텍처 및 디렉토리 구조 (System Architecture)](#4-시스템-아키텍처-및-디렉토리-구조-system-architecture)
+5. [REST API 명세서 (API Reference)](#5-rest-api-명세서-api-reference)
+6. [설치 및 실행 방법 (Installation & Usage)](#6-설치-및-실행-방법-installation--usage)
+7. [검증 실험실 및 벤치마크 (Validation Lab & Benchmarks)](#7-검증-실험실-및-벤치마크-validation-lab--benchmarks)
+8. [과학적 면책 조항 및 인용 가이드 (Scientific Disclaimer & Citations)](#8-과학적-면책-조항-및-인용-가이드-scientific-disclaimer--citations)
+9. [기술적 과제 및 개선 로드맵 (Roadmap & Technical Roadmap)](#9-기술적-과제-및-개선-로드맵-roadmap--technical-roadmap)
+
+---
+
+## 1. 프로젝트 소개 (Introduction)
+
+**VaxMatch 3D**는 감염병 병원체의 핵심 항원 단백질(예: SARS-CoV-2 스파이크 단백질 RBD)과 이를 표적하는 백신 후보 물질(단백질 서열 또는 3D 구조체) 간의 **3차원 구조적 모방도(Antigenic Mimicry)**를 원자 수준에서 정량적으로 비교·평가하는 전산 백신학(*In-Silico Vaccinology*) 웹 플랫폼입니다.
+
+기존 서열 기반 분석(BLAST 등)이 포착하지 못하는 **불연속 입체 에피톱(Conformational Discontinuous Epitope)의 3차원 배치**, **용매 접근 표면적(SASA/RSA)**, **주요 결합 루프의 Cα 원자 편차**를 다각도로 평가하여, 고등학생 및 학부생의 소논문 작성, 과학 전람회, R&E 탐구 활동 및 예비 연구자들의 초기 백신 후보 선별(Screening)을 강력하게 지원합니다.
+
+### 🎯 핵심 설계 철학
+- **다원적 정량 지표 합성**: 단일 RMSD 값에 의존하지 않고, 전체 골격 유사도($S_{global}$), 중화 에피톱 모방도($S_{epi}$), 용매 노출도($S_{exp}$), 구조 신뢰도($S_{conf}$)의 4차원 다면 평가를 수행합니다.
+- **클릭 한 번으로 끝나는 완전 자동화 파이프라인**: PDB/AlphaFold DB 구조 자동 인출, 체인 분리, Shrake-Rupley SASA 계산, 최적 중첩(Superposition), 동적 보고서 생성까지 일체형으로 처리됩니다.
+- **연구 재현성(Reproducibility) 보장**: 파라미터 버전, 분석 시각, 세부 잔기 편차 테이블(CSV), 중첩 PDB 파일, 학술 보고서 내보내기 기능을 기본 탑재했습니다.
+
+---
+
+## 2. 핵심 기능 (Key Features)
+
+### 🚀 1. 신속 분석 모드 (Quick Analyze)
+- 복잡한 설정 없이 타겟 PDB ID(또는 UniProt ID)와 후보 물질 서열/PDB를 입력하면 즉시 3D 중첩 화면과 평가 점수를 산출합니다.
+- 사전 정의된 벤치마크 프리셋(예: 우한 야생형 vs 델타 변이, 오미크론 BA.1, de novo 인공 미니단백질)을 원클릭으로 로드할 수 있습니다.
+
+### 📊 2. 다중 후보 물질 배치 스크리닝 (Batch Screening & Ranking Leaderboard)
+- 4종 이상의 백신 후보 물질을 동시에 입력하여 일괄 정렬 및 스코어링을 수행합니다.
+- 종합 점수, 에피톱 모방도, Cα RMSD 기준 자동 정렬 및 등급(최우수/우수/보통/부적합) 판정 리더보드를 제공합니다.
+- 특정 후보를 클릭하면 3D 구조 뷰어와 잔기별 상세 분석 화면으로 즉시 전환됩니다.
+
+### 🧭 3. 4단계 정밀 위저드 (Step-by-Step Guided Wizard)
+1. **1단계 (타겟 입력)**: PDB ID, UniProt ID, 파일 업로드 지원 및 분석 대상 체인 선택.
+2. **2단계 (에피톱 정의)**: 복합체 접촉면 자동 추출(SASA 차이 기반), 수동 잔기 범위 지정(`437-508`), 외부 예측 CSV 업로드 지원.
+3. **3단계 (후보 물질 입력)**: 아미노산 서열(FASTA) 또는 PDB 구조 파일 입력.
+4. **4단계 (결과 대시보드)**: 3D 구조 뷰어, 4개 하위 점수, 잔기별 편차 테이블, 가중치 민감도 분석 제공.
+
+### 🔬 4. 고성능 3D 인터랙티브 구조 뷰어 (3Dmol.js Engine)
+- **듀얼 컬러 오버레이**: 타겟 구조(Sky Blue)와 후보 물질(Amber Gold)의 실시간 겹침 시각화.
+- **에피톱 스틱 하이라이트**: 중화항체가 인식하는 핵심 잔기들을 굵은 스틱(Rose/Purple)으로 강조.
+- **Cα 편차 히트맵 (Color by Deviation)**: 타겟 잔기와의 거리에 따라 청색($\le 1.2\text{Å}$)부터 적색($>5.0\text{Å}$)까지 잔기별 색상 그라데이션 매핑.
+- **체인 격리 및 포커스 줌**: 다중 체인 복합체(예: ACE2-스파이크 복합체)에서 비분석 체인을 숨기고 에피톱 부위로 즉시 카메라 줌.
+
+### 📑 5. 논문용 민감도 분석 및 가중치 조절기 (Sensitivity Analysis)
+- 연구자의 탐구 가설에 맞추어 $w_{global}, w_{epi}, w_{exp}, w_{conf}$ 가중치 슬라이더를 실시간 조절.
+- 가중치 $\pm 20\%$ 섭동에 따른 점수 안정성 검증표를 자동 산출하여 소논문/보고서의 신뢰성 검증 자료로 활용 가능.
+
+### 🤖 6. Groq 초고속 LLM 기반 구조생물학 AI 정밀 분석 보고서
+- 마크다운 파싱 깨짐이 없는 엄격한 정형 태그 규격(`[HEADER]`, `[SECTION]`, `[METRIC]`, `[EXPLAIN]`, `[RECOMMEND]`, `[DISCLAIMER]`)을 채택.
+- 점수의 구조생물학적 의미 해석, 중화항체 결합 포켓 일치도 진단, 체액성 면역 유도성 평가, 후속 습식 실험(SPR, Cryo-EM 등) 권장사항을 단계별로 도출.
+
+---
+
+## 3. 수학적 모델 및 알고리즘 (Mathematical & Algorithmic Models)
+
+VaxMatch 3D는 단백질 간 3차원 구조 일치도를 판정하기 위해 다음의 4가지 하위 점수를 유기적으로 결합합니다.
+
+### 📐 1. 종합 모방 적합도 (Composite Antigenic Mimicry Score)
+$$S_{total} = \left( w_{global} \cdot S_{global} + w_{epi} \cdot S_{epi} + w_{exp} \cdot S_{exp} + w_{conf} \cdot S_{conf} \right) \times 100$$
+*(단, $w_{global} + w_{epi} + w_{exp} + w_{conf} = 1.0$, 기본값: $0.25, 0.40, 0.20, 0.15$)*
+
+---
+
+### 🌐 2. 전체 골격 유사도 ($S_{global}$)
+타겟과 후보 물질 간의 전체적인 3차원 폴딩 구조 보존성을 측정합니다.
+$$S_{global} = \text{TM-score} \approx \frac{1}{L_{norm}} \sum_{i=1}^{L_{ali}} \frac{1}{1 + \left( \frac{d_i}{d_0(L_{norm})} \right)^2}$$
+- $d_i$: 중첩된 Cα 원자 쌍 간의 유클리드 거리 ($\text{Å}$)
+- $d_0(L) = 1.24 \sqrt[3]{L - 15} - 1.8$: 단백질 길이에 따른 척도 보정 인자
+- $L_{norm}$: 정규화 기준 길이 (일반 모드는 타겟 길이 $L_{target}$, 단편 모드는 후보 길이 $L_{cand}$ 사용)
+- 최적 회전/이동 행렬($R, \vec{t}$)은 특이값 분해(SVD) 기반 **Kabsch 알고리즘**을 반복 수행하여 산출합니다.
+
+---
+
+### 🎯 3. 에피톱 국소 모방도 ($S_{epi}$)
+중화항체가 결합하는 핵심 표적 잔기들의 국소 입체 배치 보존성을 측정합니다.
+$$S_{epi} = \frac{1}{N_{epi}} \sum_{k \in \text{Epitope}} \frac{1}{1 + \left( \frac{d_k}{d_{cutoff}} \right)^2}$$
+- $d_{cutoff} = 3.0\text{Å}$: 에피톱 결합 허용 임계 거리
+- $d_k \to 0\text{Å}$일 때 잔기당 1.0 만점 부여, 거리가 멀어질수록 로렌츠 감쇠 곡선에 의해 점수가 완만하게 감소하여 극단적 이상치(Outlier)에 대한 과도한 페널티를 방지합니다.
+
+---
+
+### 💧 4. 용매 노출도 일치율 ($S_{exp}$)
+항체가 물리적으로 접근 가능한 단백질 외곽 표면에 에피톱이 제대로 노출되어 있는지를 판정합니다.
+$$S_{exp} = 1.0 - \frac{1}{N_{epi}} \sum_{k \in \text{Epitope}} \left| \text{RSA}_{cand}(k) - \text{RSA}_{target}(k) \right|$$
+- **Shrake-Rupley 구형 테셀레이션 알고리즘**을 통해 잔기별 절대 SASA($\text{Å}^2$)를 계산.
+- Tien et al. (2013)의 아미노산별 이론적 최대 표면적($\text{MaxSASA}$)으로 나누어 상대 노출도($\text{RSA} = \frac{\text{SASA}}{\text{MaxSASA}}$) 산출.
+- 타겟에서는 표면에 노출되어 있으나 후보 물질에서 코어 내부로 매몰(Buried)되는 현상을 정확히 적발합니다.
+
+---
+
+### 🛡️ 5. 구조 예측 신뢰도 ($S_{conf}$)
+AlphaFold / ESMFold 등 전산 예측 모델의 불확실성을 반영하기 위한 가중 지표입니다.
+$$S_{conf} = \frac{N(\text{pLDDT} \ge 70.0)}{N_{total}}$$
+- $\text{pLDDT} \ge 70$: 신뢰할 수 있는 백본 구조 (Well-modeled)
+- $\text{pLDDT} < 50$: 무작위 코일 또는 본질적 무질서 영역(IDR)으로 판정
+- 실험적으로 규명된 X-선 결정학/Cryo-EM 구조는 $S_{conf} = 1.0$ 만점을 부여합니다.
+
+---
+
+## 4. 시스템 아키텍처 및 디렉토리 구조 (System Architecture)
+
+```
+vaxmatch-3d/
+├── server.ts                       # Express 백엔드 API 서버 (Vite 미들웨어 통합)
+├── package.json                    # 프로젝트 의존성 및 스크립트 정의
+├── metadata.json                   # AI Studio Applet 메타데이터 정의
+├── .env.example                    # 환경 변수 템플릿 (GROQ_API_KEY 등)
+├── public/
+│   └── 3Dmol-min.js                # 3D 분자 구조 렌더링 라이브러리
+└── src/
+    ├── App.tsx                     # 메인 애플리케이션 엔트리 및 네비게이션
+    ├── main.tsx                    # React DOM 마운트
+    ├── index.css                   # Tailwind CSS v4 스타일링
+    ├── components/
+    │   ├── Header.tsx              # 상단 브랜드 바 및 프리셋 셀렉터
+    │   ├── TargetStep.tsx          # 1단계: 타겟 PDB/UniProt 로더
+    │   ├── EpitopeStep.tsx         # 2단계: 에피톱 정의 및 복합체 접촉면 분석
+    │   ├── CandidateStep.tsx       # 3단계: 후보 물질 서열/PDB 입력
+    │   ├── ResultsDashboard.tsx    # 4단계: 종합 결과 분석, 민감도 표, CSV/PDB 익스포터
+    │   ├── StructureViewer.tsx     # 3Dmol.js 기반 실시간 3D 겹침 뷰어
+    │   ├── QuickAnalyzeView.tsx    # 단일 후보 신속 분석 뷰
+    │   ├── BatchScreeningView.tsx  # 다중 후보 물질 대량 스크리닝 및 리더보드
+    │   ├── ValidationLab.tsx       # 검증 실험실 (알고리즘 정밀도 벤치마크)
+    │   ├── GlossaryModal.tsx       # 생물학/전산학 전문 용어 해설집
+    │   └── ReportModal.tsx         # 인쇄/PDF/Markdown 종합 보고서 뷰어
+    └── services/
+        ├── api.ts                  # 프론트엔드 REST API 통신 클라이언트
+        ├── bioAlgorithms.ts        # PDB 파서, Kabsch 중첩, SASA, 점수 산출 코어
+        ├── aiServerService.ts      # Groq LLM 정밀 AI 리포트 생성기
+        ├── presets.ts              # SARS-CoV-2 및 주요 변이체 벤치마크 프리셋
+        └── reportExporter.ts       # HTML/PDF/텍스트 보고서 생성 유틸리티
+```
+
+---
+
+## 5. REST API 명세서 (API Reference)
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/presets` | 내장된 벤치마크 프리셋 목록 반환 |
+| `POST` | `/api/v1/targets` | 타겟 단백질 로드 (PDB ID / UniProt ID / CIF 파일 파싱) |
+| `POST` | `/api/v1/epitopes` | 에피톱 잔기 리스트 산출 (수동 범위 / 복합체 접촉면 자동 분석) |
+| `POST` | `/api/v1/candidates` | 백신 후보 물질 등록 (서열 정렬 또는 구조 파일 파싱) |
+| `POST` | `/api/v1/jobs` | 3D 구조 정렬 및 4대 항원 모방도 점수 산출 작업 등록 |
+| `GET` | `/api/v1/jobs/:job_id` | 분석 완료된 결과 데이터 및 중첩 PDB 데이터 조회 |
+| `POST` | `/api/v1/quick-analyze` | 타겟 + 후보 즉시 정렬 파이프라인 |
+| `POST` | `/api/v1/batch-analyze` | 다중 후보 물질 일괄 스크리닝 및 랭킹 정렬 |
+| `POST` | `/api/v1/ai-insight` | 정밀 구조생물학 AI 보고서 텍스트 생성 (Groq LLM) |
+
+---
+
+## 6. 설치 및 실행 방법 (Installation & Usage)
+
+### 📋 요구 사항
+- **Node.js**: v18.0.0 이상 권장
+- **패키지 관리자**: `npm` 또는 `bun`
+
+### ⚙️ 1. 환경 변수 설정
+프로젝트 루트 경로에 `.env` 파일을 생성하고 Groq API 키를 입력합니다:
+```bash
+cp .env.example .env
+```
+`.env` 파일 내용:
+```env
+# Groq API Key (AI 정밀 분석 보고서 생성용)
+GROQ_API_KEY="your_groq_api_key_here"
+```
+
+### 📦 2. 패키지 설치
+```bash
+npm install
+```
+
+### 🚀 3. 개발 서버 실행
+```bash
+npm run dev
+```
+브라우저에서 `http://localhost:3000`으로 접속하여 VaxMatch 3D를 실행합니다.
+
+### 🏗️ 4. 프로덕션 빌드 및 실행
+```bash
+npm run build
+npm run start
+```
+
+---
+
+## 7. 검증 실험실 및 벤치마크 (Validation Lab & Benchmarks)
+
+시스템 상단 우측의 **[검증 실험실]** 탭에서는 VaxMatch 3D의 코어 알고리즘이 이론적 기대치에 부합하는지 실시간으로 자가 검증(Verification)할 수 있습니다:
+
+1. **양성 대조군 (Positive Control)**: 동일 구조 간 중첩 비교 ($S_{global} \ge 0.99$, $\text{RMSD} \approx 0.00\text{Å}$).
+2. **미세 변이군 (Variant Drift)**: 일부 에피톱 잔기 점돌연변이 발생 시 골격 점수는 유지되면서 에피톱 점수($S_{epi}$)만 선별적으로 감소하는지 검증.
+3. **음성 대조군 (Negative Control)**: 완전히 다른 폴딩 구조 간 비교 ($S_{global} < 0.35$, 비특이적 결합 배제).
+4. **SASA 용매 차폐 검증**: 단백질 내부 잔기($\text{RSA} < 0.1$)와 외부 돌출 잔기($\text{RSA} > 0.4$)의 노출도 일치율 변별력 테스트.
+
+---
+
+## 8. 과학적 면책 조항 및 인용 가이드 (Scientific Disclaimer & Citations)
+
+### ⚠️ 과학적 면책 조항 (Disclaimer)
+> **"이 결과는 컴퓨터상(in silico)의 3차원 구조 중첩 비교 분석이며, 실제 백신의 체내 면역 유도 효능, 중화항체 역가, 생물학적 안전성을 직접적으로 의미하거나 보증하지 않습니다."**  
+> 소논문, 탐구 보고서, 발표 자료 작성 시에는 본 시스템의 결과를 **"효과 검증"**이 아닌 **"구조적 항원성 보존 예측(Antigenic Mimicry Prediction)"**으로 기술해야 합니다.
+
+### 📚 추천 인용 문헌 (References for Academic Papers)
+- **Kabsch Algorithm**: Kabsch, W. (1976). *A solution for the best rotation to relate two sets of vectors.* Acta Crystallographica Section A, 32(5), 922-923.
+- **TM-score Formulation**: Zhang, Y., & Skolnick, J. (2004). *Scoring function for automated assessment of protein structure template quality.* Proteins, 57(4), 702-710.
+- **Shrake-Rupley SASA**: Shrake, A., & Rupley, J. A. (1973). *Environment and exposure to solvent of protein atoms. Lysozyme and insulin.* Journal of Molecular Biology, 79(2), 351-371.
+- **Theoretical MaxSASA**: Tien, M. Z., et al. (2013). *Maximum allowed solvent accessibilities of amino acids in proteins.* PLOS ONE, 8(11), e80635.
+- **RCSB PDB**: Berman, H. M., et al. (2000). *The Protein Data Bank.* Nucleic Acids Research, 28(1), 235-242.
+- **AlphaFold Database**: Jumper, J., et al. (2021). *Highly accurate protein structure prediction with AlphaFold.* Nature, 596(7873), 583-589.
+
+---
+
+## 9. 기술적 과제 및 개선 로드맵 (Roadmap & Technical Roadmap)
+
+VaxMatch 3D의 분석 신뢰성 제고 및 프로덕션 안정화를 위한 향후 로드맵은 다음과 같습니다 (`FORCHANGE_JULES` 감사 기준):
+
+1. **비동기 작업 큐 및 Worker Threads 분리**: 대형 단백질 DP 연산 시 메인 스레드 블로킹 방지 및 백그라운드 폴링 구조 고도화.
+2. **공식 US-align / TM-align CLI 바이너리 직접 연동**: 근사 휴리스틱을 넘어 공식 벤치마크 엔진과 $1:1$ 오차 대조표 제공.
+3. **SIFTS (Structure Integration with Function, UniProt and SIFTS) 잔기 번호 변환**: PDB 번호 체계와 UniProt 원형 서열 번호 간의 자동 교차 매핑 지원.
+4. **삽입 코드(Insertion Code) 및 altLoc 다중 배치 완전 지원**: `(체인, 잔기번호, iCode)` 복합 키 기반 엄밀한 원자 인덱싱.
+5. **구조 출처(Data Provenance) 명시적 배지 부여**: 실험 결정 구조(X-ray/Cryo-EM), AlphaFold DB 공식 구조, ESMFold 서열 예측 구조를 UI 및 내보내기 보고서에 엄격히 구분 표시.
+
+---
+
+**개발 및 운영**: SSEP_TEAM 씁뜩  
+**문의 및 기술 지원**: kimtaehohandsome@gmail.com  
+**라이선스**: MIT License
