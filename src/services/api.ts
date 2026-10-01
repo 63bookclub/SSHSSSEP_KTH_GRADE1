@@ -170,13 +170,22 @@ export async function submitJob(data: JobSubmission): Promise<{ job_id: string; 
   return res.json();
 }
 
-export async function getJobResult(jobId: string): Promise<JobResultData> {
-  const res = await fetch(`/api/v1/jobs/${jobId}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || '결과 조회 실패');
+export async function getJobResult(jobId: string, pollIntervalMs = 500, maxAttempts = 120): Promise<JobResultData> {
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    const res = await fetch(`/api/v1/jobs/${jobId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || '결과 조회 실패');
+    }
+    const data: JobResultData = await res.json();
+    if (data.status === 'done' || data.status === 'failed') {
+      return data;
+    }
+    attempts++;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  return res.json();
+  throw new Error('작업 처리 시간이 초과되었습니다.');
 }
 
 export interface MultiEpitopeEntity {

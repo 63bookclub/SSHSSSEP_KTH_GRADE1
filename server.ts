@@ -32,6 +32,7 @@ interface StoredTarget {
   structure: ParsedStructure;
   chains: string[];
   chainResidueCounts: Record<string, number>;
+  createdAtMs: number;
 }
 
 interface StoredCandidate {
@@ -42,6 +43,7 @@ interface StoredCandidate {
   structure: ParsedStructure;
   isExperimental: boolean;
   chain: string;
+  createdAtMs: number;
 }
 
 interface StoredEpitope {
@@ -50,6 +52,7 @@ interface StoredEpitope {
   method: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback';
   residues: number[];
   isTemporary: boolean;
+  createdAtMs: number;
 }
 
 interface StoredJob {
@@ -63,12 +66,53 @@ interface StoredJob {
   result?: EvaluationResult;
   alignedPdb?: string;
   createdAt: string;
+  createdAtMs: number;
 }
 
 const targetsStore = new Map<string, StoredTarget>();
 const candidatesStore = new Map<string, StoredCandidate>();
 const epitopesStore = new Map<string, StoredEpitope>();
 const jobsStore = new Map<string, StoredJob>();
+
+// TTL and Memory Cleanup configuration (TTL = 1 hour)
+const STORE_TTL_MS = 60 * 60 * 1000;
+
+export function cleanupExpiredStores(now = Date.now(), ttlMs = STORE_TTL_MS) {
+  let deletedCount = 0;
+  for (const [id, item] of targetsStore.entries()) {
+    if (now - item.createdAtMs > ttlMs) {
+      targetsStore.delete(id);
+      deletedCount++;
+    }
+  }
+  for (const [id, item] of candidatesStore.entries()) {
+    if (now - item.createdAtMs > ttlMs) {
+      candidatesStore.delete(id);
+      deletedCount++;
+    }
+  }
+  for (const [id, item] of epitopesStore.entries()) {
+    if (now - item.createdAtMs > ttlMs) {
+      epitopesStore.delete(id);
+      deletedCount++;
+    }
+  }
+  for (const [id, item] of jobsStore.entries()) {
+    if (now - item.createdAtMs > ttlMs) {
+      jobsStore.delete(id);
+      deletedCount++;
+    }
+  }
+  return deletedCount;
+}
+
+// Periodically run store cleanup every 5 minutes
+const cleanupInterval = setInterval(() => {
+  cleanupExpiredStores();
+}, 5 * 60 * 1000);
+if (cleanupInterval.unref) {
+  cleanupInterval.unref();
+}
 
 // Helper to fetch from external API with timeout
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000): Promise<Response> {
@@ -213,6 +257,7 @@ app.post('/api/v1/targets', async (req, res) => {
       structure,
       chains: structure.chains,
       chainResidueCounts,
+      createdAtMs: Date.now(),
     });
 
     res.json({
@@ -340,6 +385,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       method: isTemporary ? 'temporary_rsa_fallback' : method,
       residues: resolvedResidues,
       isTemporary,
+      createdAtMs: Date.now(),
     });
 
     res.json({
@@ -467,6 +513,7 @@ app.post('/api/v1/candidates', async (req, res) => {
       structure,
       isExperimental,
       chain: candChain,
+      createdAtMs: Date.now(),
     });
 
     res.json({
@@ -518,38 +565,61 @@ app.post('/api/v1/jobs', async (req, res) => {
       candidateId: candidate_id,
       epitopeId: epitope_id,
       targetChain: target_chain,
-      status: 'running',
+      status: 'queued',
       createdAt: new Date().toISOString(),
+      createdAtMs: Date.now(),
     };
     jobsStore.set(jobId, jobRecord);
 
-    // Run alignment and scoring
-    const alignment = alignStructures(targetResidues, candResidues);
-    const evaluation = evaluateAntigenicMimicry(
-      alignment,
-      epitope.residues,
-      candidate.isExperimental,
-      customWeights,
-      epitope.method,
-      target_chain
+    // Offload CPU-heavy DP alignment & scoring to worker_threads
+    const { Worker } = await import('worker_threads');
+    const path = await import('path');
+    const workerPath = path.join(process.cwd(), 'src/services/jobWorker.ts');
+
+    const worker = new Worker(
+      `
+      require('tsx/cjs');
+      require(${JSON.stringify(workerPath)});
+      `,
+      {
+        eval: true,
+        workerData: {
+          targetResidues,
+          candResidues,
+          epitopeResidues: epitope.residues,
+          isExperimentalCandidate: candidate.isExperimental,
+          customWeights,
+          epitopeMethod: epitope.method,
+          targetChain: target_chain,
+          candidateStructure: candidate.structure,
+          candidateChain: candidate.chain,
+        },
+      }
     );
 
-    // Generate aligned PDB
-    const alignedPdb = generateSuperimposedPdb(
-      candidate.structure,
-      candidate.chain,
-      alignment.rotationMatrix,
-      alignment.translationVector
-    );
+    jobRecord.status = 'running';
 
-    jobRecord.status = 'done';
-    jobRecord.result = evaluation;
-    jobRecord.alignedPdb = alignedPdb;
-    jobsStore.set(jobId, jobRecord);
+    worker.on('message', (msg) => {
+      if (msg.success) {
+        jobRecord.status = 'done';
+        jobRecord.result = msg.result;
+        jobRecord.alignedPdb = msg.alignedPdb;
+      } else {
+        jobRecord.status = 'failed';
+        jobRecord.error = msg.error || 'Worker thread computation failed.';
+      }
+      worker.terminate();
+    });
+
+    worker.on('error', (err) => {
+      jobRecord.status = 'failed';
+      jobRecord.error = err.message || 'Worker thread encountered an error.';
+      worker.terminate();
+    });
 
     res.json({
       job_id: jobId,
-      status: 'done',
+      status: 'queued',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || '작업 생성 및 실행 중 오류가 발생했습니다.' });
@@ -734,6 +804,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       structure: targetStructure,
       chains: targetStructure.chains,
       chainResidueCounts: { [targetChain]: targetResidues.length },
+      createdAtMs: Date.now(),
     });
 
     // --- 2. Resolve Epitope ---
@@ -772,6 +843,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       method: epitopeMethod,
       residues: epitopeResidueSeqs,
       isTemporary: epitopeMethod === 'temporary_rsa_fallback',
+      createdAtMs: Date.now(),
     });
 
     // --- 3. Resolve Candidate Structure ---
@@ -829,6 +901,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       structure: candStructure,
       isExperimental: isCandExperimental,
       chain: candChain,
+      createdAtMs: Date.now(),
     });
 
     // --- 4. Alignment & Antigenic Mimicry Evaluation ---
@@ -868,6 +941,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetChain,
       status: 'done',
       createdAt: new Date().toISOString(),
+      createdAtMs: Date.now(),
       result: evaluation,
       alignedPdb,
     };
@@ -977,6 +1051,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       structure: targetStructure,
       chains: targetStructure.chains,
       chainResidueCounts,
+      createdAtMs: Date.now(),
     });
 
     // 2. Resolve Epitope residues
@@ -1092,6 +1167,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           targetChain,
           status: 'done',
           createdAt: new Date().toISOString(),
+          createdAtMs: Date.now(),
           result: evaluation,
           alignedPdb,
         };
