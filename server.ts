@@ -20,6 +20,11 @@ import {
 import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
 import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
+import {
+  isValidPdbId,
+  isValidUniprotId,
+  validateAminoAcidSequence,
+} from './src/utils/validation.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -152,6 +157,9 @@ app.post('/api/v1/targets', async (req, res) => {
     let identifier = '';
 
     if (uniprot_id) {
+      if (!isValidUniprotId(uniprot_id)) {
+        return res.status(400).json({ error: `유효하지 않은 UniProt ID 형식입니다: '${uniprot_id}'.` });
+      }
       sourceType = 'uniprot';
       identifier = uniprot_id.trim().toUpperCase();
       // Fetch prediction metadata from AlphaFold DB
@@ -188,6 +196,9 @@ app.post('/api/v1/targets', async (req, res) => {
         }
       }
     } else if (pdb_id) {
+      if (!isValidPdbId(pdb_id)) {
+        return res.status(400).json({ error: `유효하지 않은 PDB ID 형식입니다: '${pdb_id}'.` });
+      }
       sourceType = 'pdb';
       identifier = pdb_id.trim().toUpperCase();
       try {
@@ -437,30 +448,12 @@ app.post('/api/v1/candidates', async (req, res) => {
         return res.status(400).json({ error: '후보 물질의 서열(FASTA/단순 서열) 또는 3D 구조 파일(PDB)을 입력해야 합니다.' });
       }
 
-      // Parse FASTA input
-      const fastaRecords = parseFastaInput(rawInput);
-      if (fastaRecords.length > 1) {
-        return res.status(400).json({
-          error: 'FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
-        });
+      // Common sequence validation
+      const seqVal = validateAminoAcidSequence(rawInput, { minLen: 5, maxLen: 600 });
+      if (!seqVal.isValid) {
+        return res.status(400).json({ error: seqVal.error });
       }
-      parsedSeq = fastaRecords[0]?.sequence || '';
-
-      // Validation: length <= 600 aa
-      const MAX_SEQ_LEN = 600;
-      if (parsedSeq.length > MAX_SEQ_LEN) {
-        return res.status(400).json({
-          error: `서열 길이가 ${parsedSeq.length} aa로 제한(${MAX_SEQ_LEN} aa)을 초과했습니다. 더 긴 단백질은 직접 예측한 PDB 파일을 업로드해 주세요.`,
-        });
-      }
-
-      // Validation: 20 standard amino acids only
-      const validAARegex = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
-      if (!validAARegex.test(parsedSeq)) {
-        return res.status(400).json({
-          error: '서열에 유효하지 않은 아미노산 문자가 포함되어 있습니다. 20종 표준 아미노산(ACDEFGHIKLMNPQRSTVWY)만 허용됩니다.',
-        });
-      }
+      parsedSeq = seqVal.sequence;
 
       // Try ESMFold API prediction
       let esmSuccess = false;
@@ -747,7 +740,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetPdbText = cleanTarget;
       targetSourceType = 'file';
       targetIdentifier = 'Custom_Target_PDB';
-    } else if (/^[0-9][a-zA-Z0-9]{3}$/i.test(cleanTarget)) {
+    } else if (isValidPdbId(cleanTarget)) {
       // PDB ID
       targetIdentifier = cleanTarget.toUpperCase();
       targetSourceType = 'pdb';
@@ -768,7 +761,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다. (${err.message})` });
         }
       }
-    } else if (/^[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$/i.test(cleanTarget)) {
+    } else if (isValidUniprotId(cleanTarget)) {
       // UniProt ID
       targetIdentifier = cleanTarget.toUpperCase();
       targetSourceType = 'uniprot';
@@ -781,10 +774,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetPdbText = await structRes.text();
     } else {
       // Sequence
-      const seqOnly = cleanTarget.replace(/[^A-Za-z]/g, '').toUpperCase();
-      if (seqOnly.length < 10) {
-        return res.status(400).json({ error: '타겟 서열은 최소 10개 이상의 아미노산이어야 합니다.' });
+      const seqVal = validateAminoAcidSequence(cleanTarget, { minLen: 10, maxLen: 2000 });
+      if (!seqVal.isValid) {
+        return res.status(400).json({ error: `타겟 서열 오류: ${seqVal.error}` });
       }
+      const seqOnly = seqVal.sequence;
       targetIdentifier = 'Target_Sequence';
       targetSourceType = 'file';
       targetPdbText = generateAlphaHelixPdb(seqOnly, 'A', 1, [0, 0, 0], 90.0);
@@ -890,7 +884,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       candStructure = cleanCandidate.includes('_atom_site.') ? parseMmcif(cleanCandidate) : parsePdb(cleanCandidate);
       isCandExperimental = true;
       candChain = candStructure.chains[0] || 'A';
-    } else if (/^[0-9][a-zA-Z0-9]{3}$/i.test(cleanCandidate)) {
+    } else if (isValidPdbId(cleanCandidate)) {
       const candId = cleanCandidate.toUpperCase();
       try {
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
@@ -899,18 +893,21 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         isCandExperimental = true;
         candChain = candStructure.chains[0] || 'A';
       } catch (_) {
-        const seqOnly = cleanCandidate.replace(/[^A-Za-z]/g, '').toUpperCase();
-        const pdbText = threadSequenceOnTemplate(seqOnly, targetResidues, 'A');
+        const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 2000 });
+        if (!seqVal.isValid) {
+          return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
+        }
+        const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
         candStructure = parsePdb(pdbText);
         isCandExperimental = false;
       }
     } else {
       // Candidate is amino acid sequence
-      const seqOnly = cleanCandidate.replace(/[^A-Za-z]/g, '').toUpperCase();
-      if (seqOnly.length < 5) {
-        return res.status(400).json({ error: '후보 서열은 최소 5개 이상의 아미노산이어야 합니다.' });
+      const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 2000 });
+      if (!seqVal.isValid) {
+        return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
       }
-      const pdbText = threadSequenceOnTemplate(seqOnly, targetResidues, 'A');
+      const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
       candStructure = parsePdb(pdbText);
       isCandExperimental = false;
       candChain = 'A';
@@ -1145,7 +1142,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           candStructure = cleanCand.includes('_atom_site.') ? parseMmcif(cleanCand) : parsePdb(cleanCand);
           isCandExperimental = true;
           candChain = candStructure.chains[0] || 'A';
-        } else if (/^[0-9][a-zA-Z0-9]{3}$/i.test(cleanCand)) {
+        } else if (isValidPdbId(cleanCand)) {
           const pId = cleanCand.toUpperCase();
           try {
             const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
@@ -1154,17 +1151,20 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             isCandExperimental = true;
             candChain = candStructure.chains[0] || 'A';
           } catch (_) {
-            const seqOnly = cleanCand.replace(/[^A-Za-z]/g, '').toUpperCase();
-            const pdbText = threadSequenceOnTemplate(seqOnly, targetResidues, 'A');
+            const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 2000 });
+            if (!seqVal.isValid) {
+              throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
+            }
+            const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
             candStructure = parsePdb(pdbText);
             isCandExperimental = false;
           }
         } else {
-          const seqOnly = cleanCand.replace(/[^A-Za-z]/g, '').toUpperCase();
-          if (seqOnly.length < 5) {
-            throw new Error(`후보 '${candName}' 서열이 너무 짧습니다 (최소 5잔기 이상)`);
+          const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 2000 });
+          if (!seqVal.isValid) {
+            throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
           }
-          const pdbText = threadSequenceOnTemplate(seqOnly, targetResidues, 'A');
+          const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
           candStructure = parsePdb(pdbText);
           isCandExperimental = false;
           candChain = 'A';
