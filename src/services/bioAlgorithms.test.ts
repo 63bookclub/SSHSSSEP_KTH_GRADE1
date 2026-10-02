@@ -202,3 +202,50 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Residue Validation in evaluateAntigenicMimicry', () => {
+  it('should exclude non-existent target epitope residues and issue warnings', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.100   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A   2     3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3     7.700   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Provide non-existent residue numbers 99, 100 alongside valid residue 1
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      [1, 99, 100],
+      false,
+      [0.25, 0.4, 0.2, 0.15],
+      'manual',
+      'A'
+    );
+
+    expect(evalResult.warnings).toBeDefined();
+    expect(evalResult.warnings![0]).toContain('99, 100');
+    expect(evalResult.evaluationRationale).toContain('분석 분모에서 제외');
+
+    // Only residue 1 should be in effective epitope set
+    const epiResidues = evalResult.residues.filter(r => r.in_epitope);
+    expect(epiResidues.length).toBe(1);
+    expect(epiResidues[0].res_id).toBe('1');
+  });
+});

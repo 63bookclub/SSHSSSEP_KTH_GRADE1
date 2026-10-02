@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,29 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should normalize valid weights that sum to 1.0 or non-1.0', () => {
+      const res1 = validateAndNormalizeWeights([0.25, 0.40, 0.20, 0.15]);
+      expect(res1.isValid).toBe(true);
+      expect(res1.normalizedWeights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights([1, 1, 1, 1]);
+      expect(res2.isValid).toBe(true);
+      expect(res2.normalizedWeights).toEqual([0.25, 0.25, 0.25, 0.25]);
+
+      const res3 = validateAndNormalizeWeights(['0.5', '1.0', '0.5', '0.0']);
+      expect(res3.isValid).toBe(true);
+      expect(res3.normalizedWeights).toEqual([0.25, 0.5, 0.25, 0.0]);
+    });
+
+    test('should reject invalid weight inputs', () => {
+      expect(validateAndNormalizeWeights([0.2, 0.3]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0.2, 0.3, 0.1, -0.5]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0.2, 'abc', 0.1, 0.5]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0]).isValid).toBe(false);
     });
   });
 });

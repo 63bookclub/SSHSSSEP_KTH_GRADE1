@@ -39,6 +39,77 @@ export interface SequenceValidationResult {
   sequence: string;
 }
 
+export interface WeightValidationResult {
+  isValid: boolean;
+  error?: string;
+  normalizedWeights: [number, number, number, number];
+}
+
+/**
+ * Validates and normalizes weight parameters for score evaluation.
+ * Ensures array of 4 non-negative finite numbers with sum > 0, normalized to sum to 1.0.
+ */
+export function validateAndNormalizeWeights(
+  weights: any
+): WeightValidationResult {
+  const defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+  if (!Array.isArray(weights) || weights.length !== 4) {
+    return {
+      isValid: false,
+      error: '가중치(weights)는 4개의 숫자로 구성된 배열이어야 합니다.',
+      normalizedWeights: defaultWeights,
+    };
+  }
+
+  const numWeights: number[] = [];
+  for (let i = 0; i < weights.length; i++) {
+    const w = typeof weights[i] === 'string' ? parseFloat(weights[i]) : Number(weights[i]);
+    if (typeof w !== 'number' || isNaN(w) || !isFinite(w)) {
+      return {
+        isValid: false,
+        error: `가중치 항목 [${i}] (${weights[i]})가 유효한 숫자가 아닙니다.`,
+        normalizedWeights: defaultWeights,
+      };
+    }
+    if (w < 0) {
+      return {
+        isValid: false,
+        error: `가중치는 음수일 수 없습니다: ${w}`,
+        normalizedWeights: defaultWeights,
+      };
+    }
+    numWeights.push(w);
+  }
+
+  const sum = numWeights.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      error: '가중치의 합은 0보다 커야 합니다.',
+      normalizedWeights: defaultWeights,
+    };
+  }
+
+  const normalized: [number, number, number, number] = [
+    Math.round((numWeights[0] / sum) * 10000) / 10000,
+    Math.round((numWeights[1] / sum) * 10000) / 10000,
+    Math.round((numWeights[2] / sum) * 10000) / 10000,
+    Math.round((numWeights[3] / sum) * 10000) / 10000,
+  ];
+
+  // Adjust last weight slightly for exact sum of 1.0 if floating point rounding differs
+  const normSum = normalized[0] + normalized[1] + normalized[2] + normalized[3];
+  if (Math.abs(normSum - 1.0) > 1e-6) {
+    normalized[3] = Math.round((1.0 - (normalized[0] + normalized[1] + normalized[2])) * 10000) / 10000;
+  }
+
+  return {
+    isValid: true,
+    normalizedWeights: normalized,
+  };
+}
+
 /**
  * Validates an amino acid sequence string.
  * Strips whitespace / FASTA header if present, checks for 20 standard amino acids, and validates length.
