@@ -202,3 +202,58 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Validation and Denominator Consistency', () => {
+  it('should filter non-existent epitope residues, issue warning, and use consistent denominators across S_epi and S_conf', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     10.000  10.000  10.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     13.800  10.000  10.000  1.00 80.00           C
+ATOM      3  CA  SER A 102     17.600  10.000  10.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A 100     10.000  10.000  10.000  1.00 85.00           C
+ATOM      2  CA  GLY A 101     13.800  10.000  10.000  1.00 85.00           C
+ATOM      3  CA  SER A 102     17.600  10.000  10.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Provide 3 valid residues (100, 101, 102) and 2 non-existent residues (998, 999)
+    const epitopeInput = [100, 101, 102, 998, 999];
+
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      epitopeInput,
+      false, // non-experimental candidate
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // 1. Should issue a warning for missing residues
+    expect(evalResult.warnings).toBeDefined();
+    expect(evalResult.warnings!.length).toBeGreaterThan(0);
+    expect(evalResult.warnings![0]).toContain('998');
+    expect(evalResult.warnings![0]).toContain('999');
+    expect(evalResult.evaluationRationale).toContain('998');
+
+    // 2. Denominator consistency:
+    // S_conf should be based on 3 valid residues (pLDDT=85 >= 70 for all 3 -> 3/3 = 1.0)
+    // If invalid residues were included in denominator, S_conf would be 3/5 = 0.6.
+    expect(evalResult.subScores.s_conf).toBe(1.0);
+
+    // Number of epitope residues in summary rationale should reflect valid count (3)
+    expect(evalResult.evaluationRationale).toContain('에피톱 잔기 수: 3개');
+  });
+});

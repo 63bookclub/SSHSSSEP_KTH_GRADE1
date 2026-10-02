@@ -24,6 +24,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './src/utils/validation.ts';
 
 const app = express();
@@ -396,13 +397,40 @@ app.post('/api/v1/epitopes', async (req, res) => {
       }
     }
 
+    // Filter resolvedResidues against target chain residues
+    const targetResList = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
+    const validTargetKeys = new Set<string>();
+    for (const r of targetResList) {
+      validTargetKeys.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+      validTargetKeys.add(r.resSeq.toString());
+    }
+
+    const validResidues: (number | string)[] = [];
+    const missingResidues: (number | string)[] = [];
+    for (const resItem of resolvedResidues) {
+      if (validTargetKeys.has(resItem.toString())) {
+        validResidues.push(resItem);
+      } else {
+        missingResidues.push(resItem);
+      }
+    }
+
+    let warningMsg: string | undefined = undefined;
+    if (missingResidues.length > 0) {
+      warningMsg = `지정한 에피톱 잔기 중 타겟 체인(${target_chain})에 존재하지 않는 잔기 ${missingResidues.length}개가 제외되었습니다: ${missingResidues.join(', ')}`;
+    }
+
+    resolvedResidues = validResidues;
+
     // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
     if (resolvedResidues.length === 0) {
       isTemporary = true;
-      const targetResList = target.structure.residuesByChain[target_chain] || [];
       resolvedResidues = targetResList
         .filter(r => (r.rsa ?? 0) >= 0.2)
-        .map(r => r.resSeq);
+        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
+      if (resolvedResidues.length === 0) {
+        resolvedResidues = targetResList.map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
+      }
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
@@ -421,7 +449,10 @@ app.post('/api/v1/epitopes', async (req, res) => {
       is_temporary: isTemporary,
       residues_count: resolvedResidues.length,
       residues: resolvedResidues,
-      note: isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
+      warning: warningMsg,
+      note: warningMsg
+        ? `${warningMsg} (${isTemporary ? '표면 노출 잔기 임시 에피톱 적용' : '유효한 에피톱 잔기만 사용'})`
+        : isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || '에피톱 처리 중 오류가 발생했습니다.' });
@@ -553,11 +584,15 @@ app.post('/api/v1/jobs', async (req, res) => {
     if (!candidate) return res.status(404).json({ error: '후보 구조를 찾을 수 없습니다.' });
     if (!epitope) return res.status(404).json({ error: '에피톱 정보를 찾을 수 없습니다.' });
 
+    if (weights !== undefined) {
+      const weightVal = validateAndNormalizeWeights(weights);
+      if (!weightVal.isValid) {
+        return res.status(400).json({ error: weightVal.error });
+      }
+    }
+    const customWeights = validateAndNormalizeWeights(weights).weights;
+
     const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
 
     const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
     const candResidues = candidate.structure.residuesByChain[candidate.chain] || Object.values(candidate.structure.residuesByChain)[0] || [];
@@ -667,6 +702,7 @@ app.get('/api/v1/jobs/:job_id', (req, res) => {
   const respData = {
     status: 'done',
     data: {
+      warnings: job.result.warnings,
       auto_settings: {
         mode: auto.mode || 'full',
         epitope_source: auto.epitope_source || auto.epitopeSource || 'manual',
@@ -933,10 +969,13 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     });
 
     // --- 4. Alignment & Antigenic Mimicry Evaluation ---
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    if (weights !== undefined) {
+      const weightVal = validateAndNormalizeWeights(weights);
+      if (!weightVal.isValid) {
+        return res.status(400).json({ error: weightVal.error });
+      }
+    }
+    const customWeights = validateAndNormalizeWeights(weights).weights;
 
     const multiEpitopesList: MultiEpitopeEntity[] | undefined = Array.isArray(req.body.multi_epitopes)
       ? req.body.multi_epitopes
@@ -980,6 +1019,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       job_id: jobId,
       status: 'done',
       data: {
+        warnings: evaluation.warnings,
         auto_settings: {
           mode: evaluation.autoSettings.mode,
           epitope_source: evaluation.autoSettings.epitopeSource,
@@ -1111,10 +1151,13 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       epitopeMethod = 'temporary_rsa_fallback';
     }
 
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    if (weights !== undefined) {
+      const weightVal = validateAndNormalizeWeights(weights);
+      if (!weightVal.isValid) {
+        return res.status(400).json({ error: weightVal.error });
+      }
+    }
+    const customWeights = validateAndNormalizeWeights(weights).weights;
 
     // 3. Evaluate each Candidate Entity
     const results = [];
@@ -1217,6 +1260,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           job_id: jobId,
           status: 'done',
           data: {
+            warnings: evaluation.warnings,
             auto_settings: {
               mode: evaluation.autoSettings.mode,
               epitope_source: evaluation.autoSettings.epitopeSource,
