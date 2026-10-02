@@ -50,6 +50,47 @@ export interface ParsedStructure {
   rawPdb: string;
 }
 
+export interface FastaRecord {
+  header: string;
+  sequence: string;
+}
+
+/**
+ * Parses FASTA formatted text or single sequence string into structured FASTA records.
+ */
+export function parseFastaInput(fastaText: string): FastaRecord[] {
+  const lines = fastaText.split(/\r?\n/);
+  const records: FastaRecord[] = [];
+  let currentHeader = '';
+  let currentSeqBuffer: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('>')) {
+      if (currentHeader || currentSeqBuffer.length > 0) {
+        records.push({
+          header: currentHeader || 'sequence',
+          sequence: currentSeqBuffer.join('').replace(/[\s\r\n\t]/g, '').toUpperCase(),
+        });
+      }
+      currentHeader = trimmed.substring(1).trim();
+      currentSeqBuffer = [];
+    } else {
+      currentSeqBuffer.push(trimmed);
+    }
+  }
+
+  if (currentHeader || currentSeqBuffer.length > 0) {
+    records.push({
+      header: currentHeader || 'sequence',
+      sequence: currentSeqBuffer.join('').replace(/[\s\r\n\t]/g, '').toUpperCase(),
+    });
+  }
+
+  return records;
+}
+
 // Standard maximum empirical SASA values for 20 amino acids (Tien et al. 2013)
 export const MAX_SASA: Record<string, number> = {
   ALA: 121.0,
@@ -352,9 +393,16 @@ export function parseMmcif(cifText: string): ParsedStructure {
 
 /**
  * Numerical Shrake-Rupley SASA algorithm
- * Approximates solvent accessible surface using spherical test points
+ * Approximates solvent accessible surface using spherical test points.
+ * `contextResidues` can be passed (e.g. all residues in a multi-chain assembly)
+ * so neighboring chains block solvent accessibility while computing SASA for `residues`.
  */
-export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints = 96): void {
+export function calculateSASA(
+  residues: Residue[],
+  probeRadius = 1.4,
+  numPoints = 96,
+  contextResidues?: Residue[]
+): void {
   // Generate points on unit sphere using golden spiral
   const spherePoints: [number, number, number][] = [];
   const inc = Math.PI * (3 - Math.sqrt(5));
@@ -366,12 +414,17 @@ export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints 
     spherePoints.push([Math.cos(phi) * r, y, Math.sin(phi) * r]);
   }
 
-  // Collect all atoms
-  const allAtoms: (Atom & { rExp: number; residue: Residue })[] = [];
+  // Pre-initialize target residue SASA
+  for (const res of residues) {
+    res.sasa = 0;
+  }
+
+  // Collect target atoms (atoms whose SASA will be calculated and accumulated)
+  const targetAtoms: (Atom & { rExp: number; residue: Residue })[] = [];
   for (const res of residues) {
     for (const at of res.atoms) {
       const vdw = VDW_RADII[at.element] || VDW_RADII.DEFAULT;
-      allAtoms.push({
+      targetAtoms.push({
         ...at,
         rExp: vdw + probeRadius,
         residue: res,
@@ -379,22 +432,37 @@ export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints 
     }
   }
 
-  // Pre-initialize residue SASA
-  for (const res of residues) {
-    res.sasa = 0;
+  // Collect all context atoms (atoms used to determine burial)
+  const allContext = contextResidues || residues;
+  const contextAtoms: (Atom & { rExp: number })[] = [];
+  for (const res of allContext) {
+    for (const at of res.atoms) {
+      const vdw = VDW_RADII[at.element] || VDW_RADII.DEFAULT;
+      contextAtoms.push({
+        ...at,
+        rExp: vdw + probeRadius,
+      });
+    }
   }
 
-  // Calculate SASA per atom with spatial grid optimization
+  // Calculate SASA per target atom
   const constFactor = (4 * Math.PI) / numPoints;
-  for (let i = 0; i < allAtoms.length; i++) {
-    const a1 = allAtoms[i];
+  for (let i = 0; i < targetAtoms.length; i++) {
+    const a1 = targetAtoms[i];
     let accessiblePoints = 0;
 
-    // Find candidate neighbor atoms
-    const neighbors: typeof allAtoms = [];
-    for (let j = 0; j < allAtoms.length; j++) {
-      if (i === j) continue;
-      const a2 = allAtoms[j];
+    // Find candidate neighbor atoms from contextAtoms
+    const neighbors: typeof contextAtoms = [];
+    for (let j = 0; j < contextAtoms.length; j++) {
+      const a2 = contextAtoms[j];
+      if (
+        a1.chain === a2.chain &&
+        a1.resSeq === a2.resSeq &&
+        a1.name === a2.name &&
+        a1.serial === a2.serial
+      ) {
+        continue;
+      }
       const dx = a1.x - a2.x;
       const dy = a1.y - a2.y;
       const dz = a1.z - a2.z;

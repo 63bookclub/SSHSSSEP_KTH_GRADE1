@@ -10,6 +10,7 @@ import {
   parseResidueRange,
   evaluateAntigenicMimicry,
   threadSequenceOnTemplate,
+  parseFastaInput,
   ParsedStructure,
   EvaluationResult,
   MultiEpitopeEntity,
@@ -238,11 +239,12 @@ app.post('/api/v1/targets', async (req, res) => {
       return res.status(400).json({ error: '유효한 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다. 표준 PDB/mmCIF 파일인지 확인해 주세요.' });
     }
 
-    // Calculate SASA for all chains
+    // Calculate SASA for all chains in full assembly context
+    const allAssemblyResidues = Object.values(structure.residuesByChain).flat();
     for (const chain of structure.chains) {
       const resList = structure.residuesByChain[chain] || [];
       if (resList.length > 0) {
-        calculateSASA(resList);
+        calculateSASA(resList, 1.4, 96, allAssemblyResidues);
       }
     }
 
@@ -376,7 +378,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       const extra = parseResidueRange(additional_ranges);
       if (combination_mode === 'union') {
         const merged = new Set([...resolvedResidues, ...extra]);
-        resolvedResidues = Array.from(merged).sort((a, b) => a - b);
+        resolvedResidues = Array.from(merged).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
       } else if (combination_mode === 'intersect') {
         const extraSet = new Set(extra);
         resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
@@ -435,13 +437,14 @@ app.post('/api/v1/candidates', async (req, res) => {
         return res.status(400).json({ error: '후보 물질의 서열(FASTA/단순 서열) 또는 3D 구조 파일(PDB)을 입력해야 합니다.' });
       }
 
-      // Parse FASTA header if present
-      if (rawInput.startsWith('>')) {
-        const lines = rawInput.split('\n');
-        parsedSeq = lines.slice(1).join('').replace(/[\s\r\n\t]/g, '').toUpperCase();
-      } else {
-        parsedSeq = rawInput.replace(/[\s\r\n\t]/g, '').toUpperCase();
+      // Parse FASTA input
+      const fastaRecords = parseFastaInput(rawInput);
+      if (fastaRecords.length > 1) {
+        return res.status(400).json({
+          error: 'FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
+        });
       }
+      parsedSeq = fastaRecords[0]?.sequence || '';
 
       // Validation: length <= 600 aa
       const MAX_SEQ_LEN = 600;
@@ -514,8 +517,9 @@ app.post('/api/v1/candidates', async (req, res) => {
 
     const candChain = structure.chains[0];
     const resList = structure.residuesByChain[candChain] || [];
+    const allCandResidues = Object.values(structure.residuesByChain).flat();
     if (resList.length > 0) {
-      calculateSASA(resList);
+      calculateSASA(resList, 1.4, 96, allCandResidues);
     }
 
     const candidateId = 'cand_' + Math.random().toString(36).substring(2, 10);
@@ -726,8 +730,13 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     // --- 1. Resolve Target Structure ---
     let cleanTarget = target_input.trim();
     if (cleanTarget.startsWith('>')) {
-      // FASTA format: extract sequence lines
-      cleanTarget = cleanTarget.split('\n').filter(l => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+      const records = parseFastaInput(cleanTarget);
+      if (records.length > 1) {
+        return res.status(400).json({
+          error: '타겟 FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
+        });
+      }
+      cleanTarget = records[0]?.sequence || '';
     }
 
     let targetPdbText = '';
@@ -789,10 +798,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       return res.status(400).json({ error: '유효한 타겟 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다.' });
     }
 
-    // Calculate SASA on target
+    // Calculate SASA on target (in full assembly context across all chains)
+    const allTargetAssemblyResidues = Object.values(targetStructure.residuesByChain).flat();
     for (const chain of targetStructure.chains) {
       const resList = targetStructure.residuesByChain[chain] || [];
-      if (resList.length > 0) calculateSASA(resList);
+      if (resList.length > 0) calculateSASA(resList, 1.4, 96, allTargetAssemblyResidues);
     }
 
     // Determine target chain
@@ -822,7 +832,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     });
 
     // --- 2. Resolve Epitope ---
-    let epitopeResidueSeqs: number[] = [];
+    let epitopeResidueSeqs: (number | string)[] = [];
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
 
@@ -863,7 +873,13 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     // --- 3. Resolve Candidate Structure ---
     let cleanCandidate = candidate_input.trim();
     if (cleanCandidate.startsWith('>')) {
-      cleanCandidate = cleanCandidate.split('\n').filter(l => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+      const records = parseFastaInput(cleanCandidate);
+      if (records.length > 1) {
+        return res.status(400).json({
+          error: '후보 FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
+        });
+      }
+      cleanCandidate = records[0]?.sequence || '';
     }
 
     let candStructure: ParsedStructure;
@@ -904,7 +920,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     if (candResidues.length === 0) {
       return res.status(400).json({ error: '후보 물질 구조에서 잔기 좌표를 생성하지 못했습니다.' });
     }
-    calculateSASA(candResidues);
+    const allCandAssemblyResidues = Object.values(candStructure.residuesByChain).flat();
+    calculateSASA(candResidues, 1.4, 96, allCandAssemblyResidues);
 
     const candidateId = 'cand_' + Math.random().toString(36).substring(2, 10);
     candidatesStore.set(candidateId, {
@@ -1050,7 +1067,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
     const targetChain = reqTargetChain?.trim() || targetStructure.chains[0] || 'A';
     const targetResidues = targetStructure.residuesByChain[targetChain] || Object.values(targetStructure.residuesByChain)[0] || [];
-    calculateSASA(targetResidues);
+    const allTargetBatchResidues = Object.values(targetStructure.residuesByChain).flat();
+    calculateSASA(targetResidues, 1.4, 96, allTargetBatchResidues);
 
     const chainResidueCounts: Record<string, number> = {};
     for (const c of targetStructure.chains) {
@@ -1073,7 +1091,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       ? multi_epitopes
       : undefined;
 
-    let epitopeResidueSeqs: number[] = [];
+    let epitopeResidueSeqs: (number | string)[] = [];
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'manual';
 
     if (multiEpitopesList && multiEpitopesList.length > 0) {
@@ -1081,7 +1099,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
         epitopeResidueSeqs.push(...resList);
       });
-      epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => a - b);
+      epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
     } else if (epitope_range && typeof epitope_range === 'string') {
       epitopeResidueSeqs = parseResidueRange(epitope_range);
     }
@@ -1089,9 +1107,9 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
     if (epitopeResidueSeqs.length === 0) {
       epitopeResidueSeqs = targetResidues
         .filter(r => (r.rsa ?? 0) >= 0.20)
-        .map(r => r.resSeq);
+        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
       if (epitopeResidueSeqs.length === 0) {
-        epitopeResidueSeqs = targetResidues.map(r => r.resSeq);
+        epitopeResidueSeqs = targetResidues.map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
       }
       epitopeMethod = 'temporary_rsa_fallback';
     }
@@ -1112,7 +1130,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       try {
         let cleanCand = (cand.input || '').trim();
         if (cleanCand.startsWith('>')) {
-          cleanCand = cleanCand.split('\n').filter((l: string) => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+          const records = parseFastaInput(cleanCand);
+          if (records.length > 1) {
+            throw new Error(`후보 '${candName}' FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.`);
+          }
+          cleanCand = records[0]?.sequence || '';
         }
 
         let candStructure: ParsedStructure;
@@ -1152,7 +1174,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         if (candResidues.length === 0) {
           throw new Error(`후보 '${candName}'에서 잔기 구조를 생성할 수 없습니다.`);
         }
-        calculateSASA(candResidues);
+        const allCandBatchResidues = Object.values(candStructure.residuesByChain).flat();
+        calculateSASA(candResidues, 1.4, 96, allCandBatchResidues);
 
         const alignment = alignStructures(targetResidues, candResidues);
         const evaluation = evaluateAntigenicMimicry(
