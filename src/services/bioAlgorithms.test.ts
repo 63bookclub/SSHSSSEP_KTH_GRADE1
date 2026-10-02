@@ -7,6 +7,8 @@ import {
   evaluateAntigenicMimicry,
   getResidueKey,
   parseResidueRange,
+  calculateSASA,
+  parseFastaInput,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
 
@@ -145,5 +147,58 @@ END
     expect(rangeResult).toContain(103);
     expect(rangeResult).toContain('100A');
     expect(rangeResult).toContain('100B');
+  });
+});
+
+describe('Assembly-wide SASA Calculation', () => {
+  it('should reduce SASA for contact interface residues when full assembly context is provided', () => {
+    // Two chains A and B in close contact
+    const multiChainPdb = `
+ATOM      1  N   ALA A   1     0.000   0.000   0.000  1.00 80.00           N
+ATOM      2  CA  ALA A   1     1.450   0.000   0.000  1.00 80.00           C
+ATOM      3  C   ALA A   1     2.000   1.200   0.000  1.00 80.00           C
+ATOM      4  O   ALA A   1     1.300   2.200   0.000  1.00 80.00           O
+ATOM      5  N   GLY B   1     0.000   0.000   2.800  1.00 80.00           N
+ATOM      6  CA  GLY B   1     1.450   0.000   2.800  1.00 80.00           C
+ATOM      7  C   GLY B   1     2.000   1.200   2.800  1.00 80.00           C
+ATOM      8  O   GLY B   1     1.300   2.200   2.800  1.00 80.00           O
+TER
+END
+`.trim();
+
+    const struct1 = parsePdb(multiChainPdb);
+    const chainA1 = struct1.residuesByChain['A'];
+    // 1. Calculate chain A in isolation
+    calculateSASA(chainA1);
+    const isolatedSasa = chainA1[0].sasa ?? 0;
+
+    const struct2 = parsePdb(multiChainPdb);
+    const chainA2 = struct2.residuesByChain['A'];
+    const allAssemblyResidues = Object.values(struct2.residuesByChain).flat();
+    // 2. Calculate chain A in full assembly context
+    calculateSASA(chainA2, 1.4, 96, allAssemblyResidues);
+    const assemblySasa = chainA2[0].sasa ?? 0;
+
+    expect(assemblySasa).toBeLessThan(isolatedSasa);
+  });
+});
+
+describe('FASTA Input Parser', () => {
+  it('should correctly parse single record FASTA', () => {
+    const fasta = `>seq1 Target Protein\nACDE\nFGHIK\n`;
+    const records = parseFastaInput(fasta);
+    expect(records.length).toBe(1);
+    expect(records[0].header).toBe('seq1 Target Protein');
+    expect(records[0].sequence).toBe('ACDEFGHIK');
+  });
+
+  it('should correctly detect multiple FASTA records', () => {
+    const multiFasta = `>seq1\nACDEF\n>seq2\nGHIKL\n`;
+    const records = parseFastaInput(multiFasta);
+    expect(records.length).toBe(2);
+    expect(records[0].header).toBe('seq1');
+    expect(records[0].sequence).toBe('ACDEF');
+    expect(records[1].header).toBe('seq2');
+    expect(records[1].sequence).toBe('GHIKL');
   });
 });
