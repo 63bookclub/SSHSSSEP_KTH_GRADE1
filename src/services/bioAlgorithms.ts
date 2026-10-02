@@ -1,3 +1,5 @@
+import { validateAndNormalizeWeights } from '../utils/validation.ts';
+
 /**
  * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
@@ -1103,6 +1105,7 @@ export interface MultiEpitopeEntity {
 }
 
 export interface EvaluationResult {
+  warnings?: string[];
   autoSettings: {
     mode: 'full' | 'fragment';
     epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback';
@@ -1182,22 +1185,48 @@ export function evaluateAntigenicMimicry(
   }
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
-  
-  // Epitope mapping for multi-epitope entities
+  const warnings: string[] = [];
+
+  // Build lookup for all valid target residues
+  const targetResidueKeys = new Set<string>();
+  for (const r of targetResidues) {
+    targetResidueKeys.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetResidueKeys.add(r.resSeq.toString());
+  }
+
+  // Epitope mapping for multi-epitope entities & residue validation
   const resToEpitopeId = new Map<string, string>();
   let effectiveEpitopeSet = new Set<string>();
+  const missingEpitopeResidues: string[] = [];
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
-        resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        if (targetResidueKeys.has(key)) {
+          resToEpitopeId.set(key, ep.id);
+          effectiveEpitopeSet.add(key);
+        } else if (!missingEpitopeResidues.includes(key)) {
+          missingEpitopeResidues.push(key);
+        }
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => {
+      const key = r.toString();
+      if (targetResidueKeys.has(key)) {
+        effectiveEpitopeSet.add(key);
+      } else if (!missingEpitopeResidues.includes(key)) {
+        missingEpitopeResidues.push(key);
+      }
+    });
+  }
+
+  if (missingEpitopeResidues.length > 0) {
+    warnings.push(
+      `경고: 에피톱 번호 중 타겟 체인(${targetChain}) 구조에 존재하지 않는 잔기(${missingEpitopeResidues.join(', ')})가 발견되어 점수 계산에서 제외되었습니다.`
+    );
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1209,6 +1238,9 @@ export function evaluateAntigenicMimicry(
         .filter(r => (r.rsa || 0) >= 0.2)
         .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
     );
+    if (epitopeResidues.length > 0 || (multiEpitopes && multiEpitopes.length > 0)) {
+      warnings.push('경고: 지정된 에피톱 잔기가 타겟 구조에 존재하지 않아 표면 노출 잔기(RSA >= 0.2)를 임시 에피톱으로 사용합니다.');
+    }
   }
 
   // Calculate residue level data
@@ -1274,11 +1306,11 @@ export function evaluateAntigenicMimicry(
 
     multiEpitopes.forEach((ep, idx) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-      const epSet = new Set(resList);
+      const validResList = resList.map(r => r.toString()).filter(key => targetResidueKeys.has(key));
+      const epSet = new Set(validResList);
       const epDists: number[] = [];
 
-      for (const rSeq of epSet) {
-        const key = rSeq.toString();
+      for (const key of epSet) {
         const pair = pairByTargetRes.get(key);
         if (pair) {
           epDists.push(pair.distance);
@@ -1306,7 +1338,7 @@ export function evaluateAntigenicMimicry(
         id: ep.id,
         name: ep.name,
         range: ep.range,
-        residuesCount: resList.length,
+        residuesCount: validResList.length,
         sEpi: Math.round(epSEpi * 1000) / 1000,
         rmsd: Math.round(epRmsd * 100) / 100,
         color: ep.color || defaultColors[idx % defaultColors.length],
@@ -1338,8 +1370,9 @@ export function evaluateAntigenicMimicry(
     ? confHighCount / totalEpitopeCount
     : 0.85;
 
-  // 4. Final fitness score
-  const [w0, w1, w2, w3] = customWeights;
+  // 4. Final fitness score (validate & normalize customWeights)
+  const normalizedWeights = validateAndNormalizeWeights(customWeights);
+  const [w0, w1, w2, w3] = normalizedWeights;
   const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
@@ -1377,7 +1410,13 @@ export function evaluateAntigenicMimicry(
 
   const rationaleSections: string[] = [
     `【1. 종합 판정 요약】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}]\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개`,
+  ];
 
+  if (warnings.length > 0) {
+    rationaleSections.push(`\n【주의 및 경고 사항】\n` + warnings.map(w => `• ${w}`).join('\n'));
+  }
+
+  rationaleSections.push(
     `\n【2. 전체 골격 위상 및 3D 접힘 구조 정렬 (S_global = ${(sGlobal * 100).toFixed(1)}%)】\n• TM-score: 타겟 기준 ${tmScoreTargetNorm.toFixed(4)}, 후보 기준 ${tmScoreCandNorm.toFixed(4)} (Zhang & Skolnick 기준: TM > 0.5일 때 동일한 단백질 슈퍼패밀리 폴딩 구조 형성 확인)\n• Cα 중첩 RMSD: ${rmsd.toFixed(2)} Å (정렬된 잔기: ${alignedLength}개 / 서열 정렬 커버리지: ${(coverage * 100).toFixed(1)}%)\n• 백본 구조적 해석: ${sGlobal >= 0.7 ? '타겟 항원의 주쇄 2차 구조(Alpha-helix/Beta-sheet) 배열이 후보 물질과 높은 위상학적 일치도를 보입니다.' : '일부 코어 또는 도메인 접힘에서 국소적인 변형 및 루프 회전이 존재합니다.'}`,
 
     `\n【3. 항원 결정기(Epitope) 국소 3차원 입체 모방도 정밀 평가 (S_epi = ${(sEpi * 100).toFixed(1)}%)】\n• 에피톱 영역 평균 Cα 편차: ${epiDistMean} Å\n• 고일치도 핵심 잔기(Cα 편차 ≤ 1.0Å): ${bestMatchingRes || '없음 (전반적 중간 편차)'}\n• 구조적 뒤틀림 주의 잔기(Cα 편차 > 2.5Å): ${devOutliers || '없음 (전체 에피톱이 매우 안정적으로 정렬됨)'}\n• 결합면 형태학적 분석: ${sEpi >= 0.75 ? '타겟 항원의 중화항체 결합 포켓 3D 좌표가 후보 물질에 매우 정밀하게 재현되어 있어 교차 반응성 유도 가능성이 높습니다.' : '에피톱 일부 잔기에서 결합면 뒤틀림이 발생하여 항체 인식 친화도(Affinity)에 차이가 생길 수 있습니다.'}`,
@@ -1387,13 +1426,14 @@ export function evaluateAntigenicMimicry(
     `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = ${(sConf * 100).toFixed(1)}%)】\n• 에피톱 영역 고신뢰도 잔기 비율 (pLDDT ≥ 70): ${isExperimentalCandidate ? '100% (X-선/Cryo-EM 실험 결정 구조 PDB)' : `${highConfPercent}%`}\n• 신뢰도 진단: ${sConf >= 0.85 ? '에피톱 영역의 예측 불확실성이 극히 낮아 컴퓨터 시뮬레이션 결과의 신뢰성이 매우 높습니다.' : '에피톱 부위에 유연한 고리(Loop) 또는 비정형 구간이 포함되어 있어 추가적인 실험 검증이 권장됩니다.'}`,
 
     `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
-  ];
+  );
 
   if (isTemporary) {
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
 
   return {
+    warnings: warnings.length > 0 ? warnings : undefined,
     autoSettings: {
       mode: isFragment ? 'fragment' : 'full',
       epitopeSource: isTemporary ? 'temporary_rsa_fallback' : epitopeSource,
@@ -1414,7 +1454,7 @@ export function evaluateAntigenicMimicry(
       s_exp: Math.round(sExp * 1000) / 1000,
       s_conf: Math.round(sConf * 1000) / 1000,
     },
-    weights: customWeights,
+    weights: normalizedWeights,
     finalFitnessScore,
     evaluationRationale: rationaleSections.join('\n'),
     epitopeBreakdown,
@@ -1425,7 +1465,7 @@ export function evaluateAntigenicMimicry(
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       parameters: {
-        weights: customWeights,
+        weights: normalizedWeights,
         probeRadius: 1.4,
         d0_target: alignmentResult.tmScoreTargetNorm,
         epitopeCount: effectiveEpitopeSet.size,

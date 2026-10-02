@@ -94,3 +94,51 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export const DEFAULT_WEIGHTS: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+/**
+ * Validates and normalizes weights for score calculation.
+ * Ensures weights are an array of 4 non-negative finite numbers with sum > 0.
+ * Normalizes the weights so their sum equals 1.0.
+ * Falls back to DEFAULT_WEIGHTS if validation fails.
+ */
+export function validateAndNormalizeWeights(
+  inputWeights: any,
+  defaultWeights: [number, number, number, number] = DEFAULT_WEIGHTS
+): [number, number, number, number] {
+  if (!Array.isArray(inputWeights) || inputWeights.length !== 4) {
+    return defaultWeights;
+  }
+
+  const parsed = inputWeights.map(w => Number(w));
+  for (const w of parsed) {
+    if (typeof w !== 'number' || !Number.isFinite(w) || w < 0) {
+      return defaultWeights;
+    }
+  }
+
+  const sum = parsed[0] + parsed[1] + parsed[2] + parsed[3];
+  if (sum <= 0 || !Number.isFinite(sum)) {
+    return defaultWeights;
+  }
+
+  // Normalize each weight so sum is 1
+  const rawNorm = parsed.map(w => w / sum);
+
+  // Round to 4 decimal places for clean UI representation
+  const roundedNorm = rawNorm.map(w => Math.round(w * 10000) / 10000) as [number, number, number, number];
+
+  // Adjust floating point error on the largest weight to guarantee exact sum of 1.0
+  const normSum = roundedNorm[0] + roundedNorm[1] + roundedNorm[2] + roundedNorm[3];
+  const diff = Math.round((1.0 - normSum) * 10000) / 10000;
+  if (Math.abs(diff) > 0) {
+    let maxIdx = 0;
+    for (let i = 1; i < 4; i++) {
+      if (roundedNorm[i] > roundedNorm[maxIdx]) maxIdx = i;
+    }
+    roundedNorm[maxIdx] = Math.round((roundedNorm[maxIdx] + diff) * 10000) / 10000;
+  }
+
+  return roundedNorm;
+}
