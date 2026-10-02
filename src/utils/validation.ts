@@ -94,3 +94,93 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export interface WeightValidationResult {
+  isValid: boolean;
+  error?: string;
+  weights: [number, number, number, number];
+}
+
+/**
+ * Validates and normalizes weights array [w_global, w_epi, w_exp, w_conf].
+ * Checks that input is an array of 4 valid numbers, each in range [0, 1],
+ * and that the sum > 0. Returns normalized weights whose sum equals 1.0.
+ */
+export function validateAndNormalizeWeights(
+  inputWeights: any,
+  defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15]
+): WeightValidationResult {
+  if (inputWeights === undefined || inputWeights === null) {
+    return { isValid: true, weights: defaultWeights };
+  }
+
+  if (!Array.isArray(inputWeights) || inputWeights.length !== 4) {
+    return {
+      isValid: false,
+      error: '가중치(weights)는 4개의 숫자 요소로 구성된 배열이어야 합니다. (예: [0.25, 0.40, 0.20, 0.15])',
+      weights: defaultWeights,
+    };
+  }
+
+  const parsed: [number, number, number, number] = [0, 0, 0, 0];
+  let sum = 0;
+
+  for (let i = 0; i < 4; i++) {
+    const rawVal = inputWeights[i];
+    if (typeof rawVal === 'string' && rawVal.trim() === '') {
+      return {
+        isValid: false,
+        error: `가중치 배열의 ${i + 1}번째 값이 비어 있습니다. 0 이상 1 이하의 숫자여야 합니다.`,
+        weights: defaultWeights,
+      };
+    }
+
+    const val = Number(rawVal);
+    if (typeof rawVal === 'boolean' || isNaN(val) || !isFinite(val)) {
+      return {
+        isValid: false,
+        error: `가중치 배열의 ${i + 1}번째 값('${rawVal}')이 유효한 숫자가 아닙니다.`,
+        weights: defaultWeights,
+      };
+    }
+
+    if (val < 0 || val > 1) {
+      return {
+        isValid: false,
+        error: `가중치 배열의 ${i + 1}번째 값(${val})이 0~1 범위를 벗어났습니다.`,
+        weights: defaultWeights,
+      };
+    }
+
+    parsed[i] = val;
+    sum += val;
+  }
+
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      error: '가중치 요소들의 합은 0보다 커야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  // Normalize weights so sum is 1.0
+  const normalized: [number, number, number, number] = [
+    Math.round((parsed[0] / sum) * 10000) / 10000,
+    Math.round((parsed[1] / sum) * 10000) / 10000,
+    Math.round((parsed[2] / sum) * 10000) / 10000,
+    Math.round((parsed[3] / sum) * 10000) / 10000,
+  ];
+
+  // Adjust last element so exact floating sum is 1.0 if needed
+  const normSum = normalized[0] + normalized[1] + normalized[2] + normalized[3];
+  if (Math.abs(normSum - 1.0) > 1e-6) {
+    const diff = 1.0 - normSum;
+    normalized[3] = Math.round((normalized[3] + diff) * 10000) / 10000;
+  }
+
+  return {
+    isValid: true,
+    weights: normalized,
+  };
+}

@@ -1,3 +1,5 @@
+import { validateAndNormalizeWeights } from '../utils/validation.ts';
+
 /**
  * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
@@ -1110,6 +1112,7 @@ export interface EvaluationResult {
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
   };
+  warnings?: string[];
   alignment: {
     tmScoreTargetNorm: number;
     tmScoreCandidateNorm: number;
@@ -1158,11 +1161,12 @@ export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  rawWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = validateAndNormalizeWeights(rawWeights).weights;
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1183,9 +1187,16 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Set of all residue keys and residue numbers actually present in targetResidues
+  const targetResKeySet = new Set<string>();
+  for (const r of targetResidues) {
+    targetResKeySet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetResKeySet.add(r.resSeq.toString());
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  const rawEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,22 +1204,46 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawEpitopeSet.add(r.toString()));
+  }
+
+  // Validate epitope residues against target structure residues
+  const warnings: string[] = [];
+  const invalidEpitopeResidues: string[] = [];
+  const effectiveEpitopeSet = new Set<string>();
+
+  for (const epRes of rawEpitopeSet) {
+    if (targetResKeySet.has(epRes)) {
+      effectiveEpitopeSet.add(epRes);
+    } else {
+      invalidEpitopeResidues.push(epRes);
+    }
+  }
+
+  if (invalidEpitopeResidues.length > 0) {
+    warnings.push(
+      `지정한 에피톱 잔기 중 타겟 체인(${targetChain})에 존재하지 않는 잔기 ${invalidEpitopeResidues.length}개가 제외되었습니다: ${invalidEpitopeResidues.join(', ')}`
+    );
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
   let isTemporary = false;
   if (effectiveEpitopeSet.size === 0) {
     isTemporary = true;
-    effectiveEpitopeSet = new Set(
-      targetResidues
-        .filter(r => (r.rsa || 0) >= 0.2)
-        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
-    );
+    for (const r of targetResidues) {
+      if ((r.rsa || 0) >= 0.2) {
+        effectiveEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+      }
+    }
+    if (effectiveEpitopeSet.size === 0) {
+      for (const r of targetResidues) {
+        effectiveEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+      }
+    }
   }
 
   // Calculate residue level data
@@ -1216,7 +1251,7 @@ export function evaluateAntigenicMimicry(
   const epiDistances: number[] = [];
   const rsaDiffs: number[] = [];
   let confHighCount = 0;
-  let totalEpitopeCount = effectiveEpitopeSet.size;
+  const totalEpitopeCount = effectiveEpitopeSet.size;
 
   for (const targetRes of targetResidues) {
     const tKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
@@ -1393,7 +1428,12 @@ export function evaluateAntigenicMimicry(
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
 
+  if (warnings.length > 0) {
+    rationaleSections.push(`\n※ 경고: ${warnings.join(' / ')}`);
+  }
+
   return {
+    warnings: warnings.length > 0 ? warnings : undefined,
     autoSettings: {
       mode: isFragment ? 'fragment' : 'full',
       epitopeSource: isTemporary ? 'temporary_rsa_fallback' : epitopeSource,

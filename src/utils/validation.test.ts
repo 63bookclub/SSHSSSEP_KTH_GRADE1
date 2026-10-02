@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,62 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should validate and return default weights when input is null/undefined', () => {
+      const res1 = validateAndNormalizeWeights(undefined);
+      expect(res1.isValid).toBe(true);
+      expect(res1.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights(null);
+      expect(res2.isValid).toBe(true);
+      expect(res2.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should normalize unnormalized weights to sum to 1.0', () => {
+      const res = validateAndNormalizeWeights([1, 1, 1, 1]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.25, 0.25, 0.25]);
+      const sum = res.weights.reduce((a, b) => a + b, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-5);
+    });
+
+    test('should parse valid string number representations and normalize', () => {
+      const res = validateAndNormalizeWeights(['0.25', '0.40', '0.20', '0.15']);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should reject array with invalid length', () => {
+      const res = validateAndNormalizeWeights([0.5, 0.5]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('4개의 숫자 요소');
+    });
+
+    test('should reject negative weight values', () => {
+      const res = validateAndNormalizeWeights([-0.1, 0.5, 0.5, 0.1]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('0~1 범위를 벗어났습니다');
+    });
+
+    test('should reject weight values exceeding 1', () => {
+      const res = validateAndNormalizeWeights([1.5, 0.2, 0.2, 0.1]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('0~1 범위를 벗어났습니다');
+    });
+
+    test('should reject non-numeric / string NaN values', () => {
+      const res = validateAndNormalizeWeights(['invalid_weight', 0.4, 0.2, 0.1]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('유효한 숫자가 아닙니다');
+    });
+
+    test('should reject zero total sum', () => {
+      const res = validateAndNormalizeWeights([0, 0, 0, 0]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('0보다 커야 합니다');
     });
   });
 });
