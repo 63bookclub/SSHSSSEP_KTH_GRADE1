@@ -3,6 +3,8 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  normalizeAndValidateWeights,
+  DEFAULT_WEIGHTS,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +75,33 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('normalizeAndValidateWeights', () => {
+    test('should return default weights if input is invalid or wrong length', () => {
+      expect(normalizeAndValidateWeights(null)).toEqual(DEFAULT_WEIGHTS);
+      expect(normalizeAndValidateWeights(undefined)).toEqual(DEFAULT_WEIGHTS);
+      expect(normalizeAndValidateWeights([])).toEqual(DEFAULT_WEIGHTS);
+      expect(normalizeAndValidateWeights([0.5, 0.5])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should return default weights if any element is negative, string, or NaN', () => {
+      expect(normalizeAndValidateWeights([-0.1, 0.4, 0.2, 0.5])).toEqual(DEFAULT_WEIGHTS);
+      expect(normalizeAndValidateWeights(['invalid', 0.4, 0.2, 0.15])).toEqual(DEFAULT_WEIGHTS);
+      expect(normalizeAndValidateWeights([NaN, 0.4, 0.2, 0.15])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should normalize weights that do not sum to 1.0', () => {
+      const weights = normalizeAndValidateWeights([1, 1, 1, 1]);
+      expect(weights).toEqual([0.25, 0.25, 0.25, 0.25]);
+      expect(weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
+    });
+
+    test('should preserve valid custom weights that already sum to 1.0', () => {
+      const input: [number, number, number, number] = [0.10, 0.50, 0.20, 0.20];
+      const weights = normalizeAndValidateWeights(input);
+      expect(weights).toEqual([0.10, 0.50, 0.20, 0.20]);
     });
   });
 });

@@ -202,3 +202,80 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Antigenic Mimicry Evaluation & Non-existent Epitope Residue Handling', () => {
+  it('should ignore non-existent epitope residue numbers with warnings and use consistent denominators across sub-scores', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Pass valid residues [1, 2] AND non-existent residues [999, 1000]
+    const epitopeResidues = [1, 2, 999, 1000];
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      epitopeResidues,
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // Verify warning in evaluationRationale
+    expect(evalResult.evaluationRationale).toContain('※ 경고: 지정된 에피톱 잔기 중 타겟 구조체');
+    expect(evalResult.evaluationRationale).toContain('999, 1000');
+
+    // Verify denominator consistency
+    const epiResiduesInList = evalResult.residues.filter(r => r.in_epitope);
+    expect(epiResiduesInList.length).toBe(2); // Only residues 1 and 2
+    expect(evalResult.reproducibility.parameters.epitopeCount).toBe(2);
+    expect(evalResult.reproducibility.parameters.missingEpitopeResiduesCount).toBe(2);
+  });
+
+  it('should normalize invalid weights during evaluation', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      targetStruct.residuesByChain['A']
+    );
+
+    // Pass invalid weights (non-summing or negative)
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      [1],
+      false,
+      [-1, 2, 'invalid' as any, 0.5] as any
+    );
+
+    // Should fall back to valid normalized weights
+    expect(evalResult.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    expect(isNaN(evalResult.finalFitnessScore)).toBe(false);
+    expect(evalResult.finalFitnessScore).toBeGreaterThanOrEqual(0);
+    expect(evalResult.finalFitnessScore).toBeLessThanOrEqual(100);
+  });
+});
