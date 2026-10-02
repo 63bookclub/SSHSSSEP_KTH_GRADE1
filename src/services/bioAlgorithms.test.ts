@@ -202,3 +202,53 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Non-existent Epitope Handling & Scoring Consistency', () => {
+  it('should issue warning and exclude non-existent epitope residues consistently in S_epi and S_conf', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100       0.000   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A 101       3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102       7.600   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const candidatePdb = `
+ATOM      1  CA  ALA A 100       0.000   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A 101       3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102       7.600   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candidatePdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Pass valid residues 100, 101 plus non-existent residue 999
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      ['100', '101', '999'],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    expect(evalResult.warnings).toBeDefined();
+    expect(evalResult.warnings![0]).toContain('999');
+    expect(evalResult.evaluationRationale).toContain('999');
+
+    // Residue list should have exactly 2 epitope residues (100 and 101)
+    const inEpiResidues = evalResult.residues.filter(r => r.in_epitope);
+    expect(inEpiResidues.length).toBe(2);
+
+    // S_epi and S_conf should both be 1.0 (since both residues 100 & 101 are identical and pLDDT = 85 >= 70)
+    expect(evalResult.subScores.s_epi).toBe(1.0);
+    expect(evalResult.subScores.s_conf).toBe(1.0);
+  });
+});

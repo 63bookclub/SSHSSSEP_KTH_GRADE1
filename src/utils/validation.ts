@@ -94,3 +94,77 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export interface WeightsValidationResult {
+  isValid: boolean;
+  error?: string;
+  weights: [number, number, number, number];
+}
+
+/**
+ * Validates and normalizes 4-element custom weights for antigenic mimicry evaluation.
+ * Ensures all elements are finite non-negative numbers in range [0, 1] and sum > 0.
+ * Returns normalized weights where sum = 1.0.
+ */
+export function validateAndNormalizeWeights(
+  input: any,
+  defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15]
+): WeightsValidationResult {
+  if (input === undefined || input === null) {
+    return { isValid: true, weights: defaultWeights };
+  }
+
+  if (!Array.isArray(input) || input.length !== 4) {
+    return {
+      isValid: false,
+      error: '가중치(weights)는 4개의 숫자로 구성된 배열이어야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  const nums: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const item = input[i];
+    if (typeof item === 'boolean' || item === null || item === undefined || typeof item === 'symbol') {
+      return {
+        isValid: false,
+        error: `가중치 [${i}]번째 항목은 유효한 숫자이어야 합니다.`,
+        weights: defaultWeights,
+      };
+    }
+    const num = typeof item === 'number' ? item : parseFloat(String(item));
+    if (isNaN(num) || !isFinite(num)) {
+      return {
+        isValid: false,
+        error: `가중치 [${i}]번째 항목이 숫자가 아니거나 유효하지 않습니다.`,
+        weights: defaultWeights,
+      };
+    }
+    if (num < 0 || num > 1) {
+      return {
+        isValid: false,
+        error: `가중치 [${i}]번째 항목(${num})은 0~1 범위 내의 숫자이어야 합니다.`,
+        weights: defaultWeights,
+      };
+    }
+    nums.push(num);
+  }
+
+  const sum = nums.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      error: '가중치의 총합은 0보다 커야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  const normWeights: [number, number, number, number] = [
+    Math.round((nums[0] / sum) * 10000) / 10000,
+    Math.round((nums[1] / sum) * 10000) / 10000,
+    Math.round((nums[2] / sum) * 10000) / 10000,
+    Math.round((nums[3] / sum) * 10000) / 10000,
+  ];
+
+  return { isValid: true, weights: normWeights };
+}

@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,41 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when input is undefined or null', () => {
+      const res1 = validateAndNormalizeWeights(undefined);
+      expect(res1.isValid).toBe(true);
+      expect(res1.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights(null);
+      expect(res2.isValid).toBe(true);
+      expect(res2.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should pass through valid weights summing to 1.0', () => {
+      const res = validateAndNormalizeWeights([0.25, 0.40, 0.20, 0.15]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should normalize valid weights that sum to != 1.0', () => {
+      const res = validateAndNormalizeWeights([0.2, 0.3, 0.2, 0.1]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.375, 0.25, 0.125]);
+      const sum = res.weights.reduce((a, b) => a + b, 0);
+      expect(sum).toBeCloseTo(1.0);
+    });
+
+    test('should reject invalid weights inputs', () => {
+      expect(validateAndNormalizeWeights([0.25, 0.25, 0.5]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights('invalid').isValid).toBe(false);
+      expect(validateAndNormalizeWeights([-0.1, 0.4, 0.2, 0.5]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights(['abc', 0.4, 0.2, 0.5]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([1.5, 0.2, 0.1, 0.1]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0]).isValid).toBe(false);
     });
   });
 });
