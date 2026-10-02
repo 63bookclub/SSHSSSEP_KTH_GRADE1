@@ -42,8 +42,8 @@ export const ValidationLab: React.FC<{
       const pdbText = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
       const targetStruct = parsePdb(pdbText);
       const candStruct = parsePdb(pdbText);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain['A'], targetStruct.allAtoms);
+      calculateSASA(candStruct.residuesByChain['A'], candStruct.allAtoms);
 
       const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
@@ -71,8 +71,8 @@ export const ValidationLab: React.FC<{
       const pdbText2 = generateAlphaHelixPdb(baseSeq, 'A', 1, [50.0, -35.0, 80.0], 95.0, 0.0);
       const targetStruct = parsePdb(pdbText1);
       const candStruct = parsePdb(pdbText2);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain['A'], targetStruct.allAtoms);
+      calculateSASA(candStruct.residuesByChain['A'], candStruct.allAtoms);
 
       const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
@@ -103,8 +103,8 @@ export const ValidationLab: React.FC<{
       const pdbNoisy = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 85.0, noise);
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbNoisy);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain['A'], targetStruct.allAtoms);
+      calculateSASA(candStruct.residuesByChain['A'], candStruct.allAtoms);
 
       const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
@@ -135,8 +135,8 @@ export const ValidationLab: React.FC<{
       const pdbTrunc = generateAlphaHelixPdb(truncatedSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbTrunc);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain['A'], targetStruct.allAtoms);
+      calculateSASA(candStruct.residuesByChain['A'], candStruct.allAtoms);
 
       const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
@@ -164,8 +164,8 @@ export const ValidationLab: React.FC<{
       const pdbNegative = generateAlphaHelixPdb(lysozymeSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbNegative);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain['A'], targetStruct.allAtoms);
+      calculateSASA(candStruct.residuesByChain['A'], candStruct.allAtoms);
 
       const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);

@@ -7,6 +7,8 @@ import {
   evaluateAntigenicMimicry,
   getResidueKey,
   parseResidueRange,
+  calculateSASA,
+  parseFastaInput,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
 
@@ -145,5 +147,51 @@ END
     expect(rangeResult).toContain(103);
     expect(rangeResult).toContain('100A');
     expect(rangeResult).toContain('100B');
+  });
+});
+
+describe('Assembly SASA Calculation & Multi-record FASTA Validation', () => {
+  it('should calculate lower SASA for chain residues when assembly contextAtoms are passed', () => {
+    // Two close parallel chains in multi-chain complex
+    const pdbContent = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CB  ALA A   1     1.000   1.000   1.000  1.00 80.00           C
+ATOM      3  CA  ALA B   1     2.000   0.000   0.000  1.00 80.00           C
+ATOM      4  CB  ALA B   1     3.000   1.000   1.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const struct1 = parsePdb(pdbContent);
+    const struct2 = parsePdb(pdbContent);
+
+    // Isolated chain A SASA
+    calculateSASA(struct1.residuesByChain['A']);
+    const sasaIsolated = struct1.residuesByChain['A'][0].sasa || 0;
+
+    // Full assembly context SASA
+    calculateSASA(struct2.residuesByChain['A'], struct2.allAtoms);
+    const sasaAssembly = struct2.residuesByChain['A'][0].sasa || 0;
+
+    expect(sasaAssembly).toBeLessThan(sasaIsolated);
+  });
+
+  it('should parse single record FASTA correctly', () => {
+    const fastaSingle = `>sp|P0DTC2|SPIKE_SARS2
+MFVFLVLLPLVSSQCVNLT
+TRTQLPPAYTNSFTRGVYYP`;
+
+    const result = parseFastaInput(fastaSingle);
+    expect(result.sequence).toBe('MFVFLVLLPLVSSQCVNLTTRTQLPPAYTNSFTRGVYYP');
+    expect(result.header).toBe('sp|P0DTC2|SPIKE_SARS2');
+  });
+
+  it('should throw an error when multi-record FASTA input is provided', () => {
+    const fastaMulti = `>seq1
+MFVFLVLLPL
+>seq2
+VSSQCVNLTTRT`;
+
+    expect(() => parseFastaInput(fastaMulti)).toThrow('2개 이상의 레코드');
   });
 });

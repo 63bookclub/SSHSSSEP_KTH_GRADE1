@@ -352,9 +352,16 @@ export function parseMmcif(cifText: string): ParsedStructure {
 
 /**
  * Numerical Shrake-Rupley SASA algorithm
- * Approximates solvent accessible surface using spherical test points
+ * Approximates solvent accessible surface using spherical test points.
+ * Supports passing contextAtoms (e.g. all atoms in full assembly/complex)
+ * so that neighbor atoms from other chains are taken into account for burial checks.
  */
-export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints = 96): void {
+export function calculateSASA(
+  residues: Residue[],
+  contextAtoms?: Atom[],
+  probeRadius = 1.4,
+  numPoints = 96
+): void {
   // Generate points on unit sphere using golden spiral
   const spherePoints: [number, number, number][] = [];
   const inc = Math.PI * (3 - Math.sqrt(5));
@@ -366,18 +373,26 @@ export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints 
     spherePoints.push([Math.cos(phi) * r, y, Math.sin(phi) * r]);
   }
 
-  // Collect all atoms
-  const allAtoms: (Atom & { rExp: number; residue: Residue })[] = [];
+  // Target atoms to calculate SASA for
+  const targetAtoms: (Atom & { rExp: number; residue: Residue })[] = [];
   for (const res of residues) {
     for (const at of res.atoms) {
       const vdw = VDW_RADII[at.element] || VDW_RADII.DEFAULT;
-      allAtoms.push({
+      targetAtoms.push({
         ...at,
         rExp: vdw + probeRadius,
         residue: res,
       });
     }
   }
+
+  // Assembly/context neighbor atoms for occlusion testing
+  const neighborAtoms: (Atom & { rExp: number })[] = contextAtoms
+    ? contextAtoms.map(at => ({
+        ...at,
+        rExp: (VDW_RADII[at.element] || VDW_RADII.DEFAULT) + probeRadius,
+      }))
+    : targetAtoms;
 
   // Pre-initialize residue SASA
   for (const res of residues) {
@@ -386,15 +401,18 @@ export function calculateSASA(residues: Residue[], probeRadius = 1.4, numPoints 
 
   // Calculate SASA per atom with spatial grid optimization
   const constFactor = (4 * Math.PI) / numPoints;
-  for (let i = 0; i < allAtoms.length; i++) {
-    const a1 = allAtoms[i];
+  for (let i = 0; i < targetAtoms.length; i++) {
+    const a1 = targetAtoms[i];
     let accessiblePoints = 0;
 
-    // Find candidate neighbor atoms
-    const neighbors: typeof allAtoms = [];
-    for (let j = 0; j < allAtoms.length; j++) {
-      if (i === j) continue;
-      const a2 = allAtoms[j];
+    // Find candidate neighbor atoms from contextAtoms
+    const neighbors: typeof neighborAtoms = [];
+    for (let j = 0; j < neighborAtoms.length; j++) {
+      const a2 = neighborAtoms[j];
+      // Skip exact same atom instance
+      if (a1.serial === a2.serial && a1.chain === a2.chain && a1.resSeq === a2.resSeq && a1.name === a2.name) {
+        continue;
+      }
       const dx = a1.x - a2.x;
       const dy = a1.y - a2.y;
       const dz = a1.z - a2.z;
@@ -977,6 +995,37 @@ export function extractComplexContacts(
 /**
  * Parse manual residue ranges such as "330-520, 614, 484, 100A"
  */
+/**
+ * Parse FASTA input string.
+ * If input contains multiple FASTA headers (>1), throws or returns an error indicator.
+ * If single FASTA header exists, strips header and extracts cleaned sequence.
+ * If plain sequence string without FASTA header, cleans and returns sequence.
+ */
+export function parseFastaInput(input: string): { sequence: string; header?: string } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { sequence: '' };
+  }
+
+  // Count FASTA headers
+  const headerLines = trimmed.split('\n').filter(line => line.trim().startsWith('>'));
+  if (headerLines.length > 1) {
+    throw new Error('FASTA 입력에 2개 이상의 레코드가 포함되어 있습니다. 단일 레코드만 입력하거나 각 후보를 개별적으로 제출해 주세요.');
+  }
+
+  if (headerLines.length === 1) {
+    const lines = trimmed.split('\n');
+    const header = lines.find(l => l.trim().startsWith('>'))?.substring(1).trim();
+    const seqLines = lines.filter(l => !l.trim().startsWith('>'));
+    const sequence = seqLines.join('').replace(/[\s\r\n\t]/g, '').toUpperCase();
+    return { sequence, header };
+  }
+
+  // Plain sequence without '>'
+  const sequence = trimmed.replace(/[\s\r\n\t]/g, '').toUpperCase();
+  return { sequence };
+}
+
 export function parseResidueRange(input: string): (number | string)[] {
   const result: (number | string)[] = [];
   const resultSet = new Set<string>();
