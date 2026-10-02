@@ -202,3 +202,73 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Antigenic Mimicry Evaluation with Validation', () => {
+  it('should issue warning and use same denominator for S_epi and S_conf when non-existent epitope residues are passed', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3       7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1       0.100   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A   2       3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3       7.700   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+    const alignment = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+
+    // Pass valid residues 1, 2 and non-existent residue 999
+    const evalRes = evaluateAntigenicMimicry(
+      alignment,
+      [1, 2, 999],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    expect(evalRes.warnings).toBeDefined();
+    expect(evalRes.warnings![0]).toContain('999');
+
+    // Residue list should only have in_epitope true for valid residues (1 and 2)
+    const epiResList = evalRes.residues.filter(r => r.in_epitope);
+    expect(epiResList.length).toBe(2);
+
+    // S_conf calculation should be based on valid 2 residues (both have pLDDT 85 >= 70, so 2 / 2 = 1.0)
+    expect(evalRes.subScores.s_conf).toBe(1.0);
+  });
+
+  it('should normalize invalid weights inside evaluateAntigenicMimicry', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const alignment = alignStructures(targetStruct.residuesByChain['A'], targetStruct.residuesByChain['A']);
+
+    // Pass invalid unnormalized weights [10, 20, 30, 40]
+    const evalRes = evaluateAntigenicMimicry(
+      alignment,
+      [1],
+      false,
+      [10, 20, 30, 40] as any,
+      'manual',
+      'A'
+    );
+
+    expect(evalRes.weights).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(evalRes.finalFitnessScore).toBeLessThanOrEqual(100);
+    expect(evalRes.finalFitnessScore).toBeGreaterThanOrEqual(0);
+    expect(Number.isNaN(evalRes.finalFitnessScore)).toBe(false);
+  });
+});

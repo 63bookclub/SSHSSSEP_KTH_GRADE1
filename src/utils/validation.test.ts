@@ -3,6 +3,8 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
+  DEFAULT_WEIGHTS,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +75,33 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when input is not an array of length 4', () => {
+      expect(validateAndNormalizeWeights(undefined)).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights(null)).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0.25, 0.40])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0.25, 0.25, 0.25, 0.25, 0.25])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should return default weights when input contains invalid numbers or negative values', () => {
+      expect(validateAndNormalizeWeights([-0.1, 0.4, 0.2, 0.15])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights(['invalid', 0.4, 0.2, 0.15])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should normalize valid weights so sum equals 1.0', () => {
+      const res = validateAndNormalizeWeights([10, 20, 30, 40]);
+      expect(res).toEqual([0.1, 0.2, 0.3, 0.4]);
+      const sum = res[0] + res[1] + res[2] + res[3];
+      expect(sum).toBeCloseTo(1.0, 4);
+    });
+
+    test('should parse string numbers and normalize correctly', () => {
+      const res = validateAndNormalizeWeights(['0.25', '0.40', '0.20', '0.15']);
+      expect(res).toEqual([0.25, 0.4, 0.2, 0.15]);
     });
   });
 });
