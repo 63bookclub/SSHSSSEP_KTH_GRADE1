@@ -183,6 +183,46 @@ END
   });
 });
 
+describe('Evaluation with Non-existent Epitope Residues', () => {
+  it('should exclude non-existent epitope residue numbers from S_epi calculation denominator and report missingEpitopeResidues', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignRes = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Request epitope residues 100, 101, and non-existent residue 999
+    const evalResult = evaluateAntigenicMimicry(
+      alignRes,
+      ['100', '101', '999'],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // 100 and 101 have 0 distance, so 1 / (1 + 0) = 1.0. S_epi = (1.0 + 1.0) / 2 = 1.0
+    expect(evalResult.subScores.s_epi).toBe(1.0);
+    expect(evalResult.autoSettings.missingEpitopeResidues).toEqual(['999']);
+  });
+});
+
 describe('FASTA Input Parser', () => {
   it('should correctly parse single record FASTA', () => {
     const fasta = `>seq1 Target Protein\nACDE\nFGHIK\n`;

@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -37,6 +38,33 @@ describe('Validation Utilities', () => {
       expect(isValidUniprotId('INVALID_UNIPROT_ID')).toBe(false);
       expect(isValidUniprotId('12345')).toBe(false);
       expect(isValidUniprotId('XYZ!!!')).toBe(false);
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when input is not an array or has invalid length', () => {
+      expect(validateAndNormalizeWeights(null)).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0.2, 0.3])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights('invalid')).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should return default weights when input contains NaN, negative, or non-numeric values', () => {
+      expect(validateAndNormalizeWeights([0.2, -0.1, 0.3, 0.4])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0.2, 'abc', 0.3, 0.4])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0])).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should normalize valid unnormalized weights so sum equals 1.0', () => {
+      const normalized = validateAndNormalizeWeights([2, 2, 1, 1]);
+      const sum = normalized.reduce((a, b) => a + b, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-6);
+      expect(normalized[0]).toBeCloseTo(0.3333, 3);
+      expect(normalized[1]).toBeCloseTo(0.3333, 3);
+      expect(normalized[2]).toBeCloseTo(0.1667, 3);
+    });
+
+    test('should preserve already normalized weights', () => {
+      expect(validateAndNormalizeWeights([0.25, 0.40, 0.20, 0.15])).toEqual([0.25, 0.40, 0.20, 0.15]);
     });
   });
 
