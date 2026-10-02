@@ -1,3 +1,5 @@
+import { validateAndNormalizeWeights } from '../utils/validation';
+
 /**
  * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
@@ -1109,6 +1111,7 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    missingEpitopeResidues?: (number | string)[];
   };
   alignment: {
     tmScoreTargetNorm: number;
@@ -1158,11 +1161,12 @@ export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  rawWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = validateAndNormalizeWeights(rawWeights);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1183,9 +1187,16 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Set of all valid target residue keys and resSeqs
+  const targetResKeysSet = new Set<string>();
+  for (const r of targetResidues) {
+    targetResKeysSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetResKeysSet.add(r.resSeq.toString());
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  let rawEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,14 +1204,18 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawEpitopeSet.add(r.toString()));
   }
 
-  // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
+  // Identify epitope residues that do not exist in the target structure
+  const missingEpitopeResidues: string[] = Array.from(rawEpitopeSet).filter(key => !targetResKeysSet.has(key));
+  let effectiveEpitopeSet = new Set<string>(Array.from(rawEpitopeSet).filter(key => targetResKeysSet.has(key)));
+
+  // Fallback check: if effective epitope set is empty, auto-populate with RSA >= 0.2
   let isTemporary = false;
   if (effectiveEpitopeSet.size === 0) {
     isTemporary = true;
@@ -1279,6 +1294,7 @@ export function evaluateAntigenicMimicry(
 
       for (const rSeq of epSet) {
         const key = rSeq.toString();
+        if (!targetResKeysSet.has(key)) continue; // Exclude non-existent epitope residues from denominator
         const pair = pairByTargetRes.get(key);
         if (pair) {
           epDists.push(pair.distance);
@@ -1390,7 +1406,11 @@ export function evaluateAntigenicMimicry(
   ];
 
   if (isTemporary) {
-    rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
+    rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없거나 모두 유효하지 않아 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
+  }
+
+  if (missingEpitopeResidues.length > 0) {
+    rationaleSections.push(`\n※ 경고: 지정된 에피톱 잔기 중 ${missingEpitopeResidues.join(', ')}번은 타겟 구조(${targetChain}체인)에 존재하지 않아 S_epi 및 S_conf 계산 분모에서 제외되었습니다.`);
   }
 
   return {
@@ -1400,6 +1420,7 @@ export function evaluateAntigenicMimicry(
       targetChain,
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
+      missingEpitopeResidues: missingEpitopeResidues.length > 0 ? missingEpitopeResidues : undefined,
     },
     alignment: {
       tmScoreTargetNorm,
