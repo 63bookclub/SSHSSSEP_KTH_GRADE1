@@ -1217,12 +1217,14 @@ export function evaluateAntigenicMimicry(
   const rsaDiffs: number[] = [];
   let confHighCount = 0;
   let totalEpitopeCount = effectiveEpitopeSet.size;
+  const matchedEpitopeKeys = new Set<string>();
 
   for (const targetRes of targetResidues) {
     const tKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
-    const inEpi = effectiveEpitopeSet.has(tKey) || effectiveEpitopeSet.has(targetRes.resSeq.toString());
-    const epId = resToEpitopeId.get(tKey) || resToEpitopeId.get(targetRes.resSeq.toString());
-    const pair = pairByTargetRes.get(tKey) || pairByTargetRes.get(targetRes.resSeq.toString());
+    const resSeqStr = targetRes.resSeq.toString();
+    const inEpi = effectiveEpitopeSet.has(tKey) || effectiveEpitopeSet.has(resSeqStr);
+    const epId = resToEpitopeId.get(tKey) || resToEpitopeId.get(resSeqStr);
+    const pair = pairByTargetRes.get(tKey) || pairByTargetRes.get(resSeqStr);
 
     const dist = pair ? pair.distance : 999.0;
     const rsaT = targetRes.rsa ?? 0.0;
@@ -1247,6 +1249,9 @@ export function evaluateAntigenicMimicry(
     });
 
     if (inEpi) {
+      if (effectiveEpitopeSet.has(tKey)) matchedEpitopeKeys.add(tKey);
+      if (effectiveEpitopeSet.has(resSeqStr)) matchedEpitopeKeys.add(resSeqStr);
+
       if (pair) {
         epiDistances.push(dist);
         rsaDiffs.push(Math.abs(rsaC - rsaT));
@@ -1258,6 +1263,14 @@ export function evaluateAntigenicMimicry(
         epiDistances.push(999.0);
         rsaDiffs.push(1.0); // max penalty
       }
+    }
+  }
+
+  // Handle non-existent epitope residues (specified in input but missing in target structure)
+  for (const epKey of effectiveEpitopeSet) {
+    if (!matchedEpitopeKeys.has(epKey)) {
+      epiDistances.push(999.0);
+      rsaDiffs.push(1.0); // max penalty
     }
   }
 

@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,52 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when input is null or undefined', () => {
+      const resNull = validateAndNormalizeWeights(null);
+      expect(resNull.isValid).toBe(true);
+      expect(resNull.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const resUndef = validateAndNormalizeWeights(undefined);
+      expect(resUndef.isValid).toBe(true);
+      expect(resUndef.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should normalize valid non-normalized weights summing to non-1.0', () => {
+      const res = validateAndNormalizeWeights([0.5, 0.5, 0.5, 0.5]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.25, 0.25, 0.25]);
+    });
+
+    test('should reject weights array if length is not 4', () => {
+      const res = validateAndNormalizeWeights([0.25, 0.25, 0.5]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('정확히 4개');
+    });
+
+    test('should reject weights with invalid non-number values', () => {
+      const res = validateAndNormalizeWeights([0.25, '0.40', 0.20, 0.15]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('유효한 숫자가 아닙니다');
+    });
+
+    test('should reject weights with negative numbers or numbers > 1', () => {
+      const resNeg = validateAndNormalizeWeights([-0.1, 0.5, 0.3, 0.3]);
+      expect(resNeg.isValid).toBe(false);
+      expect(resNeg.error).toContain('0 이상 1 이하');
+
+      const resLarge = validateAndNormalizeWeights([1.2, 0.1, 0.1, 0.1]);
+      expect(resLarge.isValid).toBe(false);
+      expect(resLarge.error).toContain('0 이상 1 이하');
+    });
+
+    test('should reject weights array if sum is 0', () => {
+      const res = validateAndNormalizeWeights([0, 0, 0, 0]);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('합은 0보다 커야 합니다');
     });
   });
 });
