@@ -9,6 +9,7 @@ import {
   parseResidueRange,
   calculateSASA,
   parseFastaInput,
+  normalizeAndValidateWeights,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
 
@@ -200,5 +201,65 @@ describe('FASTA Input Parser', () => {
     expect(records[0].sequence).toBe('ACDEF');
     expect(records[1].header).toBe('seq2');
     expect(records[1].sequence).toBe('GHIKL');
+  });
+});
+
+describe('Antigenic Mimicry Evaluation: Epitope Residue Filtering & Weight Normalization', () => {
+  it('should filter out non-existent target epitope residue numbers and keep S_epi, S_conf, and S_exp denominators consistent', () => {
+    const targetPdb = `
+ATOM      1  CA  ARG A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  HIS A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  ASP A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ARG A   1     0.100   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  HIS A   2     3.900   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  ASP A   3     7.700   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+    const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+
+    // Pass epitope numbers 1, 2 (exist) and 99, 100 (do NOT exist in target)
+    const epitopeWithNonExistent = [1, 2, 99, 100];
+    const result = evaluateAntigenicMimicry(align, epitopeWithNonExistent);
+
+    // Effective epitope count should be 2 (only residues 1 and 2 exist in target)
+    const epiResidues = result.residues.filter(r => r.in_epitope);
+    expect(epiResidues.length).toBe(2);
+    expect(epiResidues.map(r => r.res_id)).toEqual(['1', '2']);
+
+    // S_epi should be calculated based on the 2 valid epitope residues, not 4
+    expect(result.subScores.s_epi).toBeGreaterThan(0.9);
+    // S_conf should also be calculated out of 2 valid epitope residues
+    expect(result.subScores.s_conf).toBe(1.0);
+  });
+
+  it('should validate and normalize custom weights correctly', () => {
+    // Normalization test: sum > 1
+    const w1 = normalizeAndValidateWeights([0.5, 0.5, 0.5, 0.5]);
+    expect(w1).toEqual([0.25, 0.25, 0.25, 0.25]);
+
+    // String input parsing
+    const w2 = normalizeAndValidateWeights(['0.1', '0.2', '0.3', '0.4'] as any);
+    expect(w2).toEqual([0.1, 0.2, 0.3, 0.4]);
+
+    // Negative weight fallback
+    const w3 = normalizeAndValidateWeights([-0.1, 0.4, 0.2, 0.15]);
+    expect(w3).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+    // Invalid length or NaN fallback
+    const w4 = normalizeAndValidateWeights([0.25, 'invalid', 0.20, 0.15] as any);
+    expect(w4).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+    // Zero sum fallback
+    const w5 = normalizeAndValidateWeights([0, 0, 0, 0]);
+    expect(w5).toEqual([0.25, 0.40, 0.20, 0.15]);
   });
 });
