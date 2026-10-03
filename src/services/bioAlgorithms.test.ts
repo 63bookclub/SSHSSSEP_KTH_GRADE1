@@ -202,3 +202,55 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Validation & Denominator Consistency in evaluateAntigenicMimicry', () => {
+  it('should exclude non-existent target residues, emit warnings, and compute equal denominators for S_epi and S_conf', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Pass valid residues [1, 2, 3] and non-existent residues [999, 1000]
+    const requestedEpitopes = [1, 2, 3, 999, 1000];
+
+    const result = evaluateAntigenicMimicry(
+      alignment,
+      requestedEpitopes,
+      false, // non-experimental candidate
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // 1. Should issue a warning for non-existent residues 999, 1000
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings![0]).toContain('999');
+    expect(result.warnings![0]).toContain('1000');
+    expect(result.evaluationRationale).toContain('999');
+
+    // 2. Denominators for S_epi and S_conf should both be based on valid count (3 residues, all with pLDDT 80 >= 70)
+    // S_conf = 3 / 3 = 1.0
+    expect(result.subScores.s_conf).toBe(1.0);
+    // S_epi = mean(1 / (1 + (0/3)^2)) = 1.0
+    expect(result.subScores.s_epi).toBe(1.0);
+  });
+});
