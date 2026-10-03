@@ -183,6 +183,49 @@ END
   });
 });
 
+describe('Epitope Residue Handling and Evaluation', () => {
+  it('should filter out non-existent epitope residues and keep consistent denominators for S_epi and S_conf', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const targetRes = targetStruct.residuesByChain['A'];
+    const candRes = candStruct.residuesByChain['A'];
+
+    const alignment = alignStructures(targetRes, candRes);
+
+    // Provide non-existent residue IDs (999, 1000) along with valid residue ID (1)
+    const epitopeResidues = [1, 999, 1000];
+
+    const evaluation = evaluateAntigenicMimicry(
+      alignment,
+      epitopeResidues,
+      false,
+      [0.25, 0.40, 0.20, 0.15]
+    );
+
+    // S_epi should be calculated based only on valid residue 1 (distance 0 -> similarity 1.0)
+    expect(evaluation.subScores.s_epi).toBe(1.0);
+    // S_conf should be calculated with totalEpitopeCount = 1 (residue 1), not 3
+    expect(evaluation.subScores.s_conf).toBe(1.0);
+  });
+});
+
 describe('FASTA Input Parser', () => {
   it('should correctly parse single record FASTA', () => {
     const fasta = `>seq1 Target Protein\nACDE\nFGHIK\n`;
