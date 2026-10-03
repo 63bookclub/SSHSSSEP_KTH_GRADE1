@@ -202,3 +202,50 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Validation & Score Denominator Consistency', () => {
+  it('should handle non-existent epitope residues by warning and using equal denominator for S_epi and S_conf', () => {
+    const pdbTarget = `
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3       7.600   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const pdbCand = `
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3       7.600   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const structTarget = parsePdb(pdbTarget);
+    const structCand = parsePdb(pdbCand);
+
+    const align = alignStructures(structTarget.residuesByChain['A'], structCand.residuesByChain['A']);
+
+    // Pass valid residues 1 and 2, plus non-existent residue 999
+    const evalRes = evaluateAntigenicMimicry(
+      align,
+      [1, 2, 999],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // Should issue a warning for non-existent residue 999
+    expect(evalRes.warnings).toBeDefined();
+    expect(evalRes.warnings![0]).toContain('999');
+
+    // Residue list should have 2 epitope residues (residues 1 and 2)
+    const epiRes = evalRes.residues.filter(r => r.in_epitope);
+    expect(epiRes.length).toBe(2);
+
+    // s_epi and s_conf should both evaluate to 1.0 (since dists are 0 and pLDDTs >= 70)
+    expect(evalRes.subScores.s_epi).toBe(1.0);
+    expect(evalRes.subScores.s_conf).toBe(1.0);
+  });
+});

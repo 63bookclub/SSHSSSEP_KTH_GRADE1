@@ -1,3 +1,5 @@
+import { validateAndNormalizeWeights } from '../utils/validation.ts';
+
 /**
  * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
@@ -1109,7 +1111,9 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    warnings?: string[];
   };
+  warnings?: string[];
   alignment: {
     tmScoreTargetNorm: number;
     tmScoreCandidateNorm: number;
@@ -1163,6 +1167,7 @@ export function evaluateAntigenicMimicry(
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const normWeights = validateAndNormalizeWeights(customWeights);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1200,15 +1205,41 @@ export function evaluateAntigenicMimicry(
     epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
   }
 
-  // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
+  const warnings: string[] = [];
+
+  // Filter epitope set against target residues and record warnings for non-existent residue numbers
+  const targetResKeys = new Set(targetResidues.map(r => r.resKey || getResidueKey(r.resSeq, r.iCode)));
+  const targetResSeqs = new Set(targetResidues.map(r => r.resSeq.toString()));
+
+  const missingResidues: string[] = [];
+  const validEpitopeSet = new Set<string>();
+
+  for (const epRes of effectiveEpitopeSet) {
+    if (targetResKeys.has(epRes) || targetResSeqs.has(epRes)) {
+      validEpitopeSet.add(epRes);
+    } else {
+      missingResidues.push(epRes);
+    }
+  }
+
+  if (missingResidues.length > 0) {
+    warnings.push(`지정된 에피톱 잔기 중 타겟 체인(${targetChain})에 존재하지 않는 잔기가 제외되었습니다: ${missingResidues.join(', ')}`);
+  }
+
   let isTemporary = false;
-  if (effectiveEpitopeSet.size === 0) {
+  if (validEpitopeSet.size > 0) {
+    effectiveEpitopeSet = validEpitopeSet;
+  } else {
+    // Fallback check: if epitope set is empty or all specified residues were non-existent
     isTemporary = true;
     effectiveEpitopeSet = new Set(
       targetResidues
         .filter(r => (r.rsa || 0) >= 0.2)
         .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
     );
+    if (missingResidues.length > 0) {
+      warnings.push('지정된 에피톱 잔기가 타겟 구조에 존재하지 않아 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 대체했습니다.');
+    }
   }
 
   // Calculate residue level data
@@ -1339,7 +1370,7 @@ export function evaluateAntigenicMimicry(
     : 0.85;
 
   // 4. Final fitness score
-  const [w0, w1, w2, w3] = customWeights;
+  const [w0, w1, w2, w3] = normWeights;
   const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
@@ -1393,6 +1424,10 @@ export function evaluateAntigenicMimicry(
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
 
+  if (warnings.length > 0) {
+    rationaleSections.push(`\n【경고 및 유의사항】\n• ${warnings.join('\n• ')}`);
+  }
+
   return {
     autoSettings: {
       mode: isFragment ? 'fragment' : 'full',
@@ -1400,7 +1435,9 @@ export function evaluateAntigenicMimicry(
       targetChain,
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
+      warnings: warnings.length > 0 ? warnings : undefined,
     },
+    warnings: warnings.length > 0 ? warnings : undefined,
     alignment: {
       tmScoreTargetNorm,
       tmScoreCandidateNorm: tmScoreCandNorm,
@@ -1414,7 +1451,7 @@ export function evaluateAntigenicMimicry(
       s_exp: Math.round(sExp * 1000) / 1000,
       s_conf: Math.round(sConf * 1000) / 1000,
     },
-    weights: customWeights,
+    weights: normWeights,
     finalFitnessScore,
     evaluationRationale: rationaleSections.join('\n'),
     epitopeBreakdown,
@@ -1425,7 +1462,7 @@ export function evaluateAntigenicMimicry(
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       parameters: {
-        weights: customWeights,
+        weights: normWeights,
         probeRadius: 1.4,
         d0_target: alignmentResult.tmScoreTargetNorm,
         epitopeCount: effectiveEpitopeSet.size,
