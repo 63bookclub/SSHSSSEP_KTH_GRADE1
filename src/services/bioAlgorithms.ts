@@ -1183,9 +1183,16 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Build set of valid target residue identifiers (both resKey and resSeq string)
+  const targetKeyAndSeqSet = new Set<string>();
+  for (const r of targetResidues) {
+    targetKeyAndSeqSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetKeyAndSeqSet.add(r.resSeq.toString());
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  let rawEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,11 +1200,19 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawEpitopeSet.add(r.toString()));
+  }
+
+  // Filter epitope set to only include residues present in target structure
+  let effectiveEpitopeSet = new Set<string>();
+  for (const item of rawEpitopeSet) {
+    if (targetKeyAndSeqSet.has(item)) {
+      effectiveEpitopeSet.add(item);
+    }
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
