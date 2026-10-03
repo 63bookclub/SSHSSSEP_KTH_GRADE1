@@ -9,6 +9,8 @@
  * - Deterministic scientific rationale generator
  */
 
+import { validateAndNormalizeWeights } from '../utils/validation';
+
 export interface Atom {
   serial: number;
   name: string;
@@ -1110,6 +1112,7 @@ export interface EvaluationResult {
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
   };
+  warnings?: string[];
   alignment: {
     tmScoreTargetNorm: number;
     tmScoreCandidateNorm: number;
@@ -1158,11 +1161,12 @@ export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  customWeightsInput: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = validateAndNormalizeWeights(customWeightsInput);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1182,7 +1186,17 @@ export function evaluateAntigenicMimicry(
   }
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
-  
+
+  const targetResKeySet = new Set<string>();
+  for (const r of targetResidues) {
+    const key = r.resKey || getResidueKey(r.resSeq, r.iCode);
+    targetResKeySet.add(key);
+    targetResKeySet.add(r.resSeq.toString());
+  }
+
+  const warnings: string[] = [];
+  const missingResidues: string[] = [];
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
   let effectiveEpitopeSet = new Set<string>();
@@ -1192,12 +1206,30 @@ export function evaluateAntigenicMimicry(
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
-        resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        if (!targetResKeySet.has(key)) {
+          missingResidues.push(key);
+        } else {
+          resToEpitopeId.set(key, ep.id);
+          effectiveEpitopeSet.add(key);
+        }
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => {
+      const key = r.toString();
+      if (!targetResKeySet.has(key)) {
+        missingResidues.push(key);
+      } else {
+        effectiveEpitopeSet.add(key);
+      }
+    });
+  }
+
+  if (missingResidues.length > 0) {
+    const uniqueMissing = Array.from(new Set(missingResidues));
+    const warnMsg = `Warning: Specified epitope residue(s) [${uniqueMissing.join(', ')}] do not exist in target protein structure (chain ${targetChain}) and were excluded.`;
+    console.warn(warnMsg);
+    warnings.push(warnMsg);
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1401,6 +1433,7 @@ export function evaluateAntigenicMimicry(
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
     },
+    warnings: warnings.length > 0 ? warnings : undefined,
     alignment: {
       tmScoreTargetNorm,
       tmScoreCandidateNorm: tmScoreCandNorm,

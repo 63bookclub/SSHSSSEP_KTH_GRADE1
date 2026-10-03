@@ -94,3 +94,37 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export const DEFAULT_WEIGHTS: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+/**
+ * Validates and normalizes custom weights for fitness score calculation.
+ * Ensures each weight is a non-negative finite number and normalizes the sum to 1.0.
+ * Falls back to DEFAULT_WEIGHTS ([0.25, 0.40, 0.20, 0.15]) if inputs are invalid.
+ */
+export function validateAndNormalizeWeights(weights: any): [number, number, number, number] {
+  if (!Array.isArray(weights) || weights.length !== 4) {
+    return [...DEFAULT_WEIGHTS];
+  }
+
+  const numWeights: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = Number(weights[i]);
+    if (typeof weights[i] === 'symbol' || Number.isNaN(val) || !Number.isFinite(val) || val < 0) {
+      return [...DEFAULT_WEIGHTS];
+    }
+    numWeights.push(val);
+  }
+
+  const sum = numWeights.reduce((acc, w) => acc + w, 0);
+  if (sum <= 0 || !Number.isFinite(sum)) {
+    return [...DEFAULT_WEIGHTS];
+  }
+
+  return [
+    numWeights[0] / sum,
+    numWeights[1] / sum,
+    numWeights[2] / sum,
+    numWeights[3] / sum,
+  ];
+}
