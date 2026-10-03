@@ -202,3 +202,47 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Validation and Denominator Alignment', () => {
+  it('should issue a warning and exclude non-existent epitope residues for consistent S_epi and S_conf denominators', () => {
+    const pdbTarget = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END`.trim();
+
+    const pdbCand = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 80.00           C
+TER
+END`.trim();
+
+    const targetStruct = parsePdb(pdbTarget);
+    const candStruct = parsePdb(pdbCand);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Epitope specifies residues 1, 2, and non-existent residue 999
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      [1, 2, 999],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    expect(evalResult.warnings).toBeDefined();
+    expect(evalResult.warnings![0]).toContain('999');
+    expect(evalResult.warnings![0]).toContain('do not exist in target protein structure');
+
+    // Residue 999 is excluded, leaving 2 valid epitope residues (1 and 2), both with pLDDT >= 70 (80.0)
+    // S_conf should be 2/2 = 1.0 (not 2/3 = 0.667)
+    expect(evalResult.subScores.s_conf).toBe(1.0);
+  });
+});
