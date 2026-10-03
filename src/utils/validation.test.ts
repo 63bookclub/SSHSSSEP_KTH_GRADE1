@@ -3,6 +3,8 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
+  DEFAULT_WEIGHTS,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +75,39 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return DEFAULT_WEIGHTS for non-array or wrong length inputs', () => {
+      expect(validateAndNormalizeWeights(null)).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights(undefined)).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights('invalid')).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0.25, 0.25, 0.5])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0.25, 0.25, 0.25, 0.25, 0.25])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should normalize unnormalized weights so sum = 1.0', () => {
+      const norm = validateAndNormalizeWeights([1, 2, 3, 4]);
+      expect(norm).toEqual([0.1, 0.2, 0.3, 0.4]);
+      const sum = norm.reduce((a, b) => a + b, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-5);
+    });
+
+    test('should parse string numbers and normalize', () => {
+      const norm = validateAndNormalizeWeights(['0.25', '0.40', '0.20', '0.15']);
+      expect(norm).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should fallback to default weights for negative or NaN values', () => {
+      expect(validateAndNormalizeWeights([-0.1, 0.4, 0.3, 0.4])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights(['abc', 0.4, 0.3, 0.3])).toEqual(DEFAULT_WEIGHTS);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0])).toEqual(DEFAULT_WEIGHTS);
+    });
+
+    test('should keep valid already-normalized weights', () => {
+      const input: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+      expect(validateAndNormalizeWeights(input)).toEqual(input);
     });
   });
 });
