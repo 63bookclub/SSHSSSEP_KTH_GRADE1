@@ -202,3 +202,48 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Validation & Non-existent Residue Handling', () => {
+  it('should issue warning and exclude non-existent epitope residues from score calculations', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A 102     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A 100     0.100   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A 101     3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102     7.700   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Request epitopes 100, 101, and non-existent 999
+    const evalRes = evaluateAntigenicMimicry(
+      alignment,
+      ['100', '101', '999'],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    expect(evalRes.warnings).toBeDefined();
+    expect(evalRes.warnings![0]).toContain('타겟 구조에 존재하지 않는 잔기 1개(999)');
+
+    // Only 100 and 101 are in epitope (2 residues), non-existent 999 excluded
+    const epiResInOutput = evalRes.residues.filter(r => r.in_epitope);
+    expect(epiResInOutput.length).toBe(2);
+  });
+});
