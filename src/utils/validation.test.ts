@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -37,6 +38,25 @@ describe('Validation Utilities', () => {
       expect(isValidUniprotId('INVALID_UNIPROT_ID')).toBe(false);
       expect(isValidUniprotId('12345')).toBe(false);
       expect(isValidUniprotId('XYZ!!!')).toBe(false);
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should normalize valid weights that sum to != 1', () => {
+      const norm = validateAndNormalizeWeights([0.5, 0.5, 0.5, 0.5]);
+      expect(norm).toEqual([0.25, 0.25, 0.25, 0.25]);
+    });
+
+    test('should parse string numbers in array and normalize', () => {
+      const norm = validateAndNormalizeWeights(['0.1', '0.2', '0.3', '0.4']);
+      expect(norm).toEqual([0.1, 0.2, 0.3, 0.4]);
+    });
+
+    test('should fallback to default weights when invalid inputs or negative numbers are passed', () => {
+      expect(validateAndNormalizeWeights([-0.1, 0.4, 0.2, 0.15])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0.25, 'abc', 0.20, 0.15])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0])).toEqual([0.25, 0.40, 0.20, 0.15]);
+      expect(validateAndNormalizeWeights([0.1, 0.2])).toEqual([0.25, 0.40, 0.20, 0.15]);
     });
   });
 

@@ -183,6 +183,46 @@ END
   });
 });
 
+describe('Epitope Residue Validation & Weight Normalization in evaluation', () => {
+  it('should ignore non-existent epitope residue numbers consistently across S_epi and S_conf', () => {
+    const targetPdb = `
+ATOM      1  CA  ARG A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  HIS A 101     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ARG A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  HIS A 101     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+
+    // Epitope residues include valid (100, 101) and invalid (999, 888)
+    const result = evaluateAntigenicMimicry(
+      alignment,
+      [100, 101, 999, 888],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // Invalid residue numbers should be filtered out and reported in autoSettings
+    expect(result.autoSettings.invalidEpitopeResidues).toEqual(['999', '888']);
+
+    // S_epi should be 1.0 (exact overlap at 100, 101) and S_conf should be 1.0 (pLDDT 80 >= 70 for 100, 101)
+    expect(result.subScores.s_epi).toBe(1.0);
+    expect(result.subScores.s_conf).toBe(1.0);
+  });
+});
+
 describe('FASTA Input Parser', () => {
   it('should correctly parse single record FASTA', () => {
     const fasta = `>seq1 Target Protein\nACDE\nFGHIK\n`;
