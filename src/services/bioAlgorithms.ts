@@ -1,3 +1,5 @@
+import { validateAndNormalizeWeights } from '../utils/validation';
+
 /**
  * Biological and structural bioinformatics algorithms for 2026 SSEP_TEAM SSBD(씁뜩):
  * - PDB and mmCIF parser for C-alpha and heavy atoms
@@ -1183,7 +1185,14 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
-  // Epitope mapping for multi-epitope entities
+  // Set of target residue keys existing in target structure
+  const targetResKeySet = new Set<string>();
+  targetResidues.forEach(r => {
+    targetResKeySet.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetResKeySet.add(r.resSeq.toString());
+  });
+
+  // Filter input epitope residues to only those that actually exist in target structure
   const resToEpitopeId = new Map<string, string>();
   let effectiveEpitopeSet = new Set<string>();
 
@@ -1192,12 +1201,19 @@ export function evaluateAntigenicMimicry(
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
-        resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        if (targetResKeySet.has(key)) {
+          resToEpitopeId.set(key, ep.id);
+          effectiveEpitopeSet.add(key);
+        }
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => {
+      const key = r.toString();
+      if (targetResKeySet.has(key)) {
+        effectiveEpitopeSet.add(key);
+      }
+    });
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1273,7 +1289,8 @@ export function evaluateAntigenicMimicry(
     const defaultColors = ['#e11d48', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#ec4899'];
 
     multiEpitopes.forEach((ep, idx) => {
-      const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
+      const rawResList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
+      const resList = rawResList.filter(rSeq => targetResKeySet.has(rSeq.toString()));
       const epSet = new Set(resList);
       const epDists: number[] = [];
 
@@ -1338,8 +1355,8 @@ export function evaluateAntigenicMimicry(
     ? confHighCount / totalEpitopeCount
     : 0.85;
 
-  // 4. Final fitness score
-  const [w0, w1, w2, w3] = customWeights;
+  // Validate and normalize weights
+  const [w0, w1, w2, w3] = validateAndNormalizeWeights(customWeights);
   const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 

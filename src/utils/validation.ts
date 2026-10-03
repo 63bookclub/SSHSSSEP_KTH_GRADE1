@@ -94,3 +94,39 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export const DEFAULT_WEIGHTS: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+/**
+ * Validates and normalizes weights for scoring [w_global, w_epi, w_exp, w_conf].
+ * Ensures array length 4, non-negative finite numbers, and normalizes sum to 1.0.
+ * Falls back to DEFAULT_WEIGHTS if input is invalid or sum is 0.
+ */
+export function validateAndNormalizeWeights(inputWeights: unknown): [number, number, number, number] {
+  if (!Array.isArray(inputWeights) || inputWeights.length !== 4) {
+    return [...DEFAULT_WEIGHTS];
+  }
+
+  const parsed: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = typeof inputWeights[i] === 'number' ? inputWeights[i] : Number(inputWeights[i]);
+    if (typeof val !== 'number' || isNaN(val) || !isFinite(val) || val < 0) {
+      return [...DEFAULT_WEIGHTS];
+    }
+    parsed.push(val);
+  }
+
+  const sum = parsed.reduce((acc, v) => acc + v, 0);
+  if (sum <= 0) {
+    return [...DEFAULT_WEIGHTS];
+  }
+
+  const normalized: [number, number, number, number] = [
+    Math.round((parsed[0] / sum) * 10000) / 10000,
+    Math.round((parsed[1] / sum) * 10000) / 10000,
+    Math.round((parsed[2] / sum) * 10000) / 10000,
+    Math.round((parsed[3] / sum) * 10000) / 10000,
+  ];
+
+  return normalized;
+}
