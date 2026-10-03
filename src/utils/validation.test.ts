@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,46 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when undefined or null is provided', () => {
+      const res1 = validateAndNormalizeWeights(undefined);
+      expect(res1.isValid).toBe(true);
+      expect(res1.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights(null);
+      expect(res2.isValid).toBe(true);
+      expect(res2.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should reject inputs that are not 4-element arrays', () => {
+      const res1 = validateAndNormalizeWeights([0.5, 0.5]);
+      expect(res1.isValid).toBe(false);
+      expect(res1.error).toContain('4개의 숫자를 포함하는 배열');
+
+      const res2 = validateAndNormalizeWeights('not-an-array');
+      expect(res2.isValid).toBe(false);
+    });
+
+    test('should reject non-numeric or negative values', () => {
+      const res1 = validateAndNormalizeWeights([0.25, 'abc', 0.20, 0.15]);
+      expect(res1.isValid).toBe(false);
+      expect(res1.error).toContain('유효한 숫자가 아닙니다');
+
+      const res2 = validateAndNormalizeWeights([0.25, -0.1, 0.20, 0.15]);
+      expect(res2.isValid).toBe(false);
+      expect(res2.error).toContain('음수일 수 없습니다');
+    });
+
+    test('should normalize weights that do not sum to 1', () => {
+      // Sum = 10 -> [2/10, 4/10, 2/10, 2/10] = [0.2, 0.4, 0.2, 0.2]
+      const res = validateAndNormalizeWeights([2, 4, 2, 2]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.2, 0.4, 0.2, 0.2]);
+      const sum = res.weights.reduce((a, b) => a + b, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-5);
     });
   });
 });

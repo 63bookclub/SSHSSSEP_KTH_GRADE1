@@ -202,3 +202,54 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Non-existent Epitope Residue Handling', () => {
+  it('should exclude non-existent epitope residues from both S_epi and S_conf denominators', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Provide epitope residues [1, 999] where 999 does not exist in target
+    const resultWith999 = evaluateAntigenicMimicry(
+      alignment,
+      [1, 999],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // Provide epitope residue [1] only
+    const resultWithout999 = evaluateAntigenicMimicry(
+      alignment,
+      [1],
+      false,
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // S_epi and S_conf should be identical regardless of non-existent residue 999
+    expect(resultWith999.subScores.s_epi).toBe(resultWithout999.subScores.s_epi);
+    expect(resultWith999.subScores.s_conf).toBe(resultWithout999.subScores.s_conf);
+    expect(resultWith999.finalFitnessScore).toBe(resultWithout999.finalFitnessScore);
+  });
+});

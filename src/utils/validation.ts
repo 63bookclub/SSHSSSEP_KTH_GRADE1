@@ -94,3 +94,79 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export interface WeightValidationResult {
+  isValid: boolean;
+  error?: string;
+  weights: [number, number, number, number];
+}
+
+/**
+ * Validates and normalizes 4-element score weight arrays.
+ * Ensures length == 4, all elements are non-negative finite numbers,
+ * and normalizes the sum to 1.0.
+ */
+export function validateAndNormalizeWeights(
+  weightsInput: any,
+  defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15]
+): WeightValidationResult {
+  if (weightsInput === undefined || weightsInput === null) {
+    return { isValid: true, weights: defaultWeights };
+  }
+
+  if (!Array.isArray(weightsInput) || weightsInput.length !== 4) {
+    return {
+      isValid: false,
+      error: '가중치(weights)는 4개의 숫자를 포함하는 배열이어야 합니다. (예: [0.25, 0.40, 0.20, 0.15])',
+      weights: defaultWeights,
+    };
+  }
+
+  const parsedWeights: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = typeof weightsInput[i] === 'number' ? weightsInput[i] : parseFloat(weightsInput[i]);
+    if (isNaN(val) || !isFinite(val)) {
+      return {
+        isValid: false,
+        error: `가중치의 ${i + 1}번째 항목('${weightsInput[i]}')이 유효한 숫자가 아닙니다.`,
+        weights: defaultWeights,
+      };
+    }
+    if (val < 0) {
+      return {
+        isValid: false,
+        error: `가중치 항목은 음수일 수 없습니다. (${val})`,
+        weights: defaultWeights,
+      };
+    }
+    parsedWeights.push(val);
+  }
+
+  const sum = parsedWeights.reduce((acc, curr) => acc + curr, 0);
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      error: '가중치의 합은 0보다 커야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  // Normalize so sum equals 1.0
+  const normalized: [number, number, number, number] = [
+    Math.round((parsedWeights[0] / sum) * 10000) / 10000,
+    Math.round((parsedWeights[1] / sum) * 10000) / 10000,
+    Math.round((parsedWeights[2] / sum) * 10000) / 10000,
+    Math.round((parsedWeights[3] / sum) * 10000) / 10000,
+  ];
+
+  // Adjust precision drift on final element if needed
+  const normSum = normalized[0] + normalized[1] + normalized[2] + normalized[3];
+  if (Math.abs(1.0 - normSum) > 1e-6) {
+    normalized[3] = Math.round((1.0 - (normalized[0] + normalized[1] + normalized[2])) * 10000) / 10000;
+  }
+
+  return {
+    isValid: true,
+    weights: normalized,
+  };
+}
