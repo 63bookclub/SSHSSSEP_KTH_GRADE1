@@ -94,3 +94,40 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export const DEFAULT_WEIGHTS: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+/**
+ * Validates and normalizes 4 scoring weights to sum to 1.0.
+ * Expects an array of 4 numbers, each finite, non-negative, with total sum > 0.
+ * Returns normalized [w0, w1, w2, w3] or DEFAULT_WEIGHTS if invalid.
+ */
+export function validateAndNormalizeWeights(weights: any): [number, number, number, number] {
+  if (!Array.isArray(weights) || weights.length !== 4) {
+    return DEFAULT_WEIGHTS;
+  }
+
+  const numWeights: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = typeof weights[i] === 'number' ? weights[i] : Number(weights[i]);
+    if (typeof val !== 'number' || !isFinite(val) || isNaN(val) || val < 0) {
+      return DEFAULT_WEIGHTS;
+    }
+    numWeights.push(val);
+  }
+
+  const sum = numWeights.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return DEFAULT_WEIGHTS;
+  }
+
+  // Normalize so sum equals 1.0
+  const normalized: [number, number, number, number] = [
+    numWeights[0] / sum,
+    numWeights[1] / sum,
+    numWeights[2] / sum,
+    numWeights[3] / sum,
+  ];
+
+  return normalized;
+}

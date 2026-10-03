@@ -202,3 +202,50 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Residue Validation & Evaluation Scores', () => {
+  it('should ignore non-existent epitope residues and calculate consistent S_epi and S_conf denominators', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 90.00           C
+ATOM      2  CA  GLY A   2     3.800   0.000   0.000  1.00 90.00           C
+ATOM      3  CA  SER A   3     7.600   0.000   0.000  1.00 90.00           C
+ATOM      4  CA  PRO A   4    11.400   0.000   0.000  1.00 90.00           C
+ATOM      5  CA  VAL A   5    15.200   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1     0.100   0.000   0.000  1.00 85.00           C
+ATOM      2  CA  GLY A   2     3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3     7.700   0.000   0.000  1.00 85.00           C
+ATOM      4  CA  PRO A   4    11.500   0.000   0.000  1.00 85.00           C
+ATOM      5  CA  VAL A   5    15.300   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Pass non-existent epitope residue IDs: 99 and 999
+    // Set isExperimentalCandidate = true so S_conf is 1.0 (100%)
+    const res = evaluateAntigenicMimicry(
+      alignment,
+      [1, 2, 99, 999],
+      true,
+      [0.25, 0.40, 0.20, 0.15]
+    );
+
+    const inEpiResidues = res.residues.filter(r => r.in_epitope);
+    expect(inEpiResidues.length).toBe(2); // Only residues 1 and 2 exist in target
+    expect(res.subScores.s_epi).toBeGreaterThan(0);
+    expect(res.subScores.s_conf).toBe(1.0); // 2 out of 2 high conf (pLDDT >= 70)
+    expect(isNaN(res.finalFitnessScore)).toBe(false);
+  });
+});

@@ -1154,15 +1154,18 @@ export interface EvaluationResult {
   };
 }
 
+import { validateAndNormalizeWeights } from '../utils/validation';
+
 export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  rawWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = validateAndNormalizeWeights(rawWeights);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1183,6 +1186,14 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Valid target residue keys set for filtering non-existent epitope residue inputs
+  const validTargetKeys = new Set<string>();
+  for (const r of targetResidues) {
+    validTargetKeys.add(r.resSeq.toString());
+    if (r.resKey) validTargetKeys.add(r.resKey);
+    validTargetKeys.add(getResidueKey(r.resSeq, r.iCode));
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
   let effectiveEpitopeSet = new Set<string>();
@@ -1190,14 +1201,20 @@ export function evaluateAntigenicMimicry(
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-      resList.forEach((rSeq) => {
+      const validResList = resList.filter(rSeq => validTargetKeys.has(rSeq.toString()));
+      validResList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
         effectiveEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => {
+      const key = r.toString();
+      if (validTargetKeys.has(key)) {
+        effectiveEpitopeSet.add(key);
+      }
+    });
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1274,7 +1291,8 @@ export function evaluateAntigenicMimicry(
 
     multiEpitopes.forEach((ep, idx) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-      const epSet = new Set(resList);
+      const validResList = resList.filter(rSeq => validTargetKeys.has(rSeq.toString()));
+      const epSet = new Set(validResList);
       const epDists: number[] = [];
 
       for (const rSeq of epSet) {
