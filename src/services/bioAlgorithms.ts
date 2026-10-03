@@ -1102,6 +1102,34 @@ export interface MultiEpitopeEntity {
   rmsd?: number;
 }
 
+export const DEFAULT_WEIGHTS: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+/**
+ * Validates and normalizes weights [w_global, w_epi, w_exp, w_conf].
+ * Ensures weights are non-negative numbers, sums to 1.0, and defaults if invalid.
+ */
+export function normalizeAndValidateWeights(
+  input: any,
+  defaultWeights: [number, number, number, number] = DEFAULT_WEIGHTS
+): [number, number, number, number] {
+  if (!Array.isArray(input) || input.length !== 4) {
+    return [...defaultWeights] as [number, number, number, number];
+  }
+
+  const parsed = input.map(v => typeof v === 'number' ? v : parseFloat(v));
+  if (parsed.some(v => typeof v !== 'number' || isNaN(v) || !isFinite(v) || v < 0)) {
+    return [...defaultWeights] as [number, number, number, number];
+  }
+
+  const sum = parsed.reduce((acc, v) => acc + v, 0);
+  if (sum <= 0) {
+    return [...defaultWeights] as [number, number, number, number];
+  }
+
+  const normalized = parsed.map(v => Math.round((v / sum) * 10000) / 10000);
+  return [normalized[0], normalized[1], normalized[2], normalized[3]];
+}
+
 export interface EvaluationResult {
   autoSettings: {
     mode: 'full' | 'fragment';
@@ -1158,11 +1186,12 @@ export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  customWeightsInput: any = DEFAULT_WEIGHTS,
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = normalizeAndValidateWeights(customWeightsInput);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
@@ -1183,9 +1212,17 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Set of target residue keys for validating requested epitope residues
+  const targetResKeys = new Set<string>();
+  const targetResSeqKeys = new Set<string>();
+  for (const r of targetResidues) {
+    targetResKeys.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    targetResSeqKeys.add(r.resSeq.toString());
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  let rawEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,11 +1230,19 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawEpitopeSet.add(r.toString()));
+  }
+
+  // Filter requested epitope residues against target structure so non-existent numbers are excluded
+  let effectiveEpitopeSet = new Set<string>();
+  for (const epResKey of rawEpitopeSet) {
+    if (targetResKeys.has(epResKey) || targetResSeqKeys.has(epResKey)) {
+      effectiveEpitopeSet.add(epResKey);
+    }
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1216,7 +1261,6 @@ export function evaluateAntigenicMimicry(
   const epiDistances: number[] = [];
   const rsaDiffs: number[] = [];
   let confHighCount = 0;
-  let totalEpitopeCount = effectiveEpitopeSet.size;
 
   for (const targetRes of targetResidues) {
     const tKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
@@ -1261,6 +1305,9 @@ export function evaluateAntigenicMimicry(
     }
   }
 
+  // Denominator consistency across S_epi, S_exp, S_conf
+  const totalEpitopeCount = effectiveEpitopeSet.size;
+
   // 1. S_epi: mean(1 / (1 + (d_i / 3.0)^2)) & Multi-Epitope breakdown
   let sEpi = 0;
   let epitopeBreakdown: EvaluationResult['epitopeBreakdown'] = undefined;
@@ -1274,7 +1321,8 @@ export function evaluateAntigenicMimicry(
 
     multiEpitopes.forEach((ep, idx) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-      const epSet = new Set(resList);
+      const validEpResList = resList.filter(rSeq => targetResKeys.has(rSeq.toString()) || targetResSeqKeys.has(rSeq.toString()));
+      const epSet = new Set(validEpResList);
       const epDists: number[] = [];
 
       for (const rSeq of epSet) {
@@ -1306,7 +1354,7 @@ export function evaluateAntigenicMimicry(
         id: ep.id,
         name: ep.name,
         range: ep.range,
-        residuesCount: resList.length,
+        residuesCount: epSet.size,
         sEpi: Math.round(epSEpi * 1000) / 1000,
         rmsd: Math.round(epRmsd * 100) / 100,
         color: ep.color || defaultColors[idx % defaultColors.length],
