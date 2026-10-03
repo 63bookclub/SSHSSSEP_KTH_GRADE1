@@ -202,3 +202,70 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('evaluateAntigenicMimicry Integration', () => {
+  it('should filter non-existent epitope numbers, issue warnings, and compute S_epi and S_conf with unified denominators', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A  10     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A  11     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A  12     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A  10     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A  11     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A  12     7.600   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const align = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Provide epitope residues [10, 11, 999] where 999 does not exist in target
+    const result = evaluateAntigenicMimicry(
+      align,
+      [10, 11, 999],
+      false,
+      [0.25, 0.40, 0.20, 0.15]
+    );
+
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings![0]).toContain('999');
+    // Subscores s_epi and s_conf should both be computed over 2 valid epitope residues (10 and 11)
+    expect(result.subScores.s_epi).toBe(1.0);
+    expect(result.subScores.s_conf).toBe(1.0);
+  });
+
+  it('should normalize custom weights that do not sum to 1.0 and prevent score > 100', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A  10     0.000   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A  10     0.000   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const align = alignStructures(
+      parsePdb(targetPdb).residuesByChain['A'],
+      parsePdb(candPdb).residuesByChain['A']
+    );
+
+    // Unnormalized weights: [1.0, 1.0, 1.0, 1.0] sum = 4
+    const result = evaluateAntigenicMimicry(align, [10], false, [1.0, 1.0, 1.0, 1.0]);
+
+    expect(result.weights).toEqual([0.25, 0.25, 0.25, 0.25]);
+    expect(result.finalFitnessScore).toBeLessThanOrEqual(100.0);
+  });
+});

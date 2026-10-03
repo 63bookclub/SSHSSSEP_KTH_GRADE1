@@ -1091,6 +1091,9 @@ export function parseResidueRange(input: string): (number | string)[] {
  * S_conf: fraction of epitope residues with pLDDT >= 70 (0~1)
  * final_score: round(100 * (w[0]*S_global + w[1]*S_epi + w[2]*S_exp + w[3]*S_conf), 2)
  */
+import { validateAndNormalizeWeights } from './weightValidation';
+import { validateEpitopeResidues } from './epitopeValidation';
+
 export interface MultiEpitopeEntity {
   id: string;
   name: string;
@@ -1103,6 +1106,7 @@ export interface MultiEpitopeEntity {
 }
 
 export interface EvaluationResult {
+  warnings?: string[];
   autoSettings: {
     mode: 'full' | 'fragment';
     epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback';
@@ -1182,33 +1186,28 @@ export function evaluateAntigenicMimicry(
   }
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
-  
+
+  // Validate & Normalize Weights
+  const weightVal = validateAndNormalizeWeights(customWeights);
+  const normalizedWeights = weightVal.normalizedWeights;
+
+  // Validate & Filter Epitope Residues against Target Structure
+  const epitopeVal = validateEpitopeResidues(targetResidues, epitopeResidues, multiEpitopes);
+  let effectiveEpitopeSet = epitopeVal.validEpitopeSet;
+  let isTemporary = epitopeVal.isFallbackTemporary;
+  const warnings = epitopeVal.warnings;
+  const validatedMultiEpitopes = epitopeVal.validatedMultiEpitopes;
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
-
-  if (multiEpitopes && multiEpitopes.length > 0) {
-    multiEpitopes.forEach((ep) => {
+  if (validatedMultiEpitopes && validatedMultiEpitopes.length > 0) {
+    validatedMultiEpitopes.forEach((ep) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
       });
     });
-  } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
-  }
-
-  // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
-  let isTemporary = false;
-  if (effectiveEpitopeSet.size === 0) {
-    isTemporary = true;
-    effectiveEpitopeSet = new Set(
-      targetResidues
-        .filter(r => (r.rsa || 0) >= 0.2)
-        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
-    );
   }
 
   // Calculate residue level data
@@ -1339,7 +1338,7 @@ export function evaluateAntigenicMimicry(
     : 0.85;
 
   // 4. Final fitness score
-  const [w0, w1, w2, w3] = customWeights;
+  const [w0, w1, w2, w3] = normalizedWeights;
   const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
@@ -1393,7 +1392,14 @@ export function evaluateAntigenicMimicry(
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
 
+  if (warnings && warnings.length > 0) {
+    for (const w of warnings) {
+      rationaleSections.push(`\n※ 경고: ${w}`);
+    }
+  }
+
   return {
+    warnings: warnings.length > 0 ? warnings : undefined,
     autoSettings: {
       mode: isFragment ? 'fragment' : 'full',
       epitopeSource: isTemporary ? 'temporary_rsa_fallback' : epitopeSource,
@@ -1414,7 +1420,7 @@ export function evaluateAntigenicMimicry(
       s_exp: Math.round(sExp * 1000) / 1000,
       s_conf: Math.round(sConf * 1000) / 1000,
     },
-    weights: customWeights,
+    weights: normalizedWeights,
     finalFitnessScore,
     evaluationRationale: rationaleSections.join('\n'),
     epitopeBreakdown,
