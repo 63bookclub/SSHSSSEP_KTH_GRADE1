@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,48 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights when input is undefined or null', () => {
+      const res1 = validateAndNormalizeWeights(undefined);
+      expect(res1.isValid).toBe(true);
+      expect(res1.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights(null);
+      expect(res2.isValid).toBe(true);
+      expect(res2.weights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should reject invalid array length or non-array inputs', () => {
+      const res1 = validateAndNormalizeWeights([0.2, 0.3]);
+      expect(res1.isValid).toBe(false);
+      expect(res1.error).toContain('4개의 숫자 배열');
+
+      const res2 = validateAndNormalizeWeights('not an array');
+      expect(res2.isValid).toBe(false);
+      expect(res2.error).toContain('4개의 숫자 배열');
+    });
+
+    test('should reject negative, NaN, or non-finite numbers', () => {
+      const res1 = validateAndNormalizeWeights([0.2, -0.1, 0.4, 0.5]);
+      expect(res1.isValid).toBe(false);
+      expect(res1.error).toContain('음수 불가');
+
+      const res2 = validateAndNormalizeWeights([0.2, 'abc', 0.4, 0.5]);
+      expect(res2.isValid).toBe(false);
+      expect(res2.error).toContain('올바른 숫자가 아닙니다');
+    });
+
+    test('should normalize valid weights to sum 1.0', () => {
+      const res = validateAndNormalizeWeights([2, 2, 2, 2]);
+      expect(res.isValid).toBe(true);
+      expect(res.weights).toEqual([0.25, 0.25, 0.25, 0.25]);
+
+      const res2 = validateAndNormalizeWeights([1, 0, 0, 0]);
+      expect(res2.isValid).toBe(true);
+      expect(res2.weights).toEqual([1, 0, 0, 0]);
     });
   });
 });
