@@ -28,6 +28,39 @@ export function isValidUniprotId(id: string): boolean {
   return UNIPROT_ID_REGEX.test(id.trim());
 }
 
+/**
+ * Validates and normalizes weights for scoring [w_global, w_epi, w_exp, w_conf].
+ * - Ensures 4 numeric values >= 0.
+ * - Normalizes sum to 1.0.
+ * - If invalid or sum <= 0, returns standard default weights [0.25, 0.40, 0.20, 0.15].
+ */
+export function validateAndNormalizeWeights(
+  weights?: any
+): [number, number, number, number] {
+  const defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+  if (!Array.isArray(weights) || weights.length !== 4) {
+    return defaultWeights;
+  }
+
+  const parsed = weights.map(w => (typeof w === 'number' ? w : parseFloat(w)));
+  if (parsed.some(w => isNaN(w) || !isFinite(w) || w < 0)) {
+    return defaultWeights;
+  }
+
+  const sum = parsed.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return defaultWeights;
+  }
+
+  return [
+    Math.round((parsed[0] / sum) * 10000) / 10000,
+    Math.round((parsed[1] / sum) * 10000) / 10000,
+    Math.round((parsed[2] / sum) * 10000) / 10000,
+    Math.round((parsed[3] / sum) * 10000) / 10000,
+  ];
+}
+
 export interface SequenceValidationOptions {
   minLen?: number;
   maxLen?: number;

@@ -1109,6 +1109,7 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    invalidEpitopeResidues?: (number | string)[];
   };
   alignment: {
     tmScoreTargetNorm: number;
@@ -1154,38 +1155,48 @@ export interface EvaluationResult {
   };
 }
 
+import { validateAndNormalizeWeights } from '../utils/validation.ts';
+
 export function evaluateAntigenicMimicry(
   alignmentResult: AlignmentResult,
   epitopeResidues: (number | string)[],
   isExperimentalCandidate = false,
-  customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
+  rawWeights?: any,
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
   multiEpitopes?: MultiEpitopeEntity[]
 ): EvaluationResult {
+  const customWeights = validateAndNormalizeWeights(rawWeights);
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
   const targetMap = new Map<string, Residue>();
   for (const r of targetResidues) {
-    targetMap.set(r.resKey || getResidueKey(r.resSeq, r.iCode), r);
+    const resKey = r.resKey || getResidueKey(r.resSeq, r.iCode);
+    targetMap.set(resKey, r);
+    targetMap.set(r.resSeq.toString(), r);
   }
 
   const candMap = new Map<string, Residue>();
   for (const r of candResidues) {
-    candMap.set(r.resKey || getResidueKey(r.resSeq, r.iCode), r);
+    const resKey = r.resKey || getResidueKey(r.resSeq, r.iCode);
+    candMap.set(resKey, r);
+    candMap.set(r.resSeq.toString(), r);
   }
 
   const pairByTargetRes = new Map<string, AlignedPair>();
   for (const p of alignedPairs) {
     const key = p.targetResKey || p.targetResSeq.toString();
     pairByTargetRes.set(key, p);
+    if (p.targetResSeq !== undefined) {
+      pairByTargetRes.set(p.targetResSeq.toString(), p);
+    }
   }
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
-  // Epitope mapping for multi-epitope entities
+  // Epitope mapping for multi-epitope entities & input residue validation
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  const rawInputEpitopeKeys = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,21 +1204,35 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawInputEpitopeKeys.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawInputEpitopeKeys.add(r.toString()));
   }
 
-  // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
+  // Validate epitope residues against target structure residues
+  let effectiveEpitopeSet = new Set<string>();
+  const invalidEpitopeResidues: (number | string)[] = [];
+
+  for (const rawKey of rawInputEpitopeKeys) {
+    const targetRes = targetMap.get(rawKey);
+    if (targetRes) {
+      const canonicalKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
+      effectiveEpitopeSet.add(canonicalKey);
+    } else {
+      invalidEpitopeResidues.push(rawKey);
+    }
+  }
+
+  // Fallback check: if valid epitope set is empty, auto-populate with RSA >= 0.2
   let isTemporary = false;
   if (effectiveEpitopeSet.size === 0) {
     isTemporary = true;
+    const surfaceRes = targetResidues.filter(r => (r.rsa || 0) >= 0.2);
+    const fallbackList = surfaceRes.length > 0 ? surfaceRes : targetResidues;
     effectiveEpitopeSet = new Set(
-      targetResidues
-        .filter(r => (r.rsa || 0) >= 0.2)
-        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
+      fallbackList.map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
     );
   }
 
@@ -1400,6 +1425,7 @@ export function evaluateAntigenicMimicry(
       targetChain,
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
+      invalidEpitopeResidues: invalidEpitopeResidues.length > 0 ? invalidEpitopeResidues : undefined,
     },
     alignment: {
       tmScoreTargetNorm,
