@@ -17,6 +17,7 @@ import {
   Residue,
   getResidueKey,
 } from './src/services/bioAlgorithms.ts';
+import { validateAndNormalizeWeights } from './src/services/weightValidation.ts';
 import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
 import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
@@ -553,11 +554,12 @@ app.post('/api/v1/jobs', async (req, res) => {
     if (!candidate) return res.status(404).json({ error: '후보 구조를 찾을 수 없습니다.' });
     if (!epitope) return res.status(404).json({ error: '에피톱 정보를 찾을 수 없습니다.' });
 
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.valid && weights !== undefined && weights !== null) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
     const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
 
     const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
     const candResidues = candidate.structure.residuesByChain[candidate.chain] || Object.values(candidate.structure.residuesByChain)[0] || [];
@@ -933,10 +935,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     });
 
     // --- 4. Alignment & Antigenic Mimicry Evaluation ---
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.valid && weights !== undefined && weights !== null) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
 
     const multiEpitopesList: MultiEpitopeEntity[] | undefined = Array.isArray(req.body.multi_epitopes)
       ? req.body.multi_epitopes
@@ -1111,10 +1114,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       epitopeMethod = 'temporary_rsa_fallback';
     }
 
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.valid && weights !== undefined && weights !== null) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
 
     // 3. Evaluate each Candidate Entity
     const results = [];
