@@ -202,3 +202,23 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Epitope Residue Denominator Consistency in evaluateAntigenicMimicry', () => {
+  it('should include non-existent / unmapped epitope residue in S_epi denominator matching S_conf denominator', () => {
+    const pdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+    const struct = parsePdb(pdb);
+    const alignment = alignStructures(struct.residuesByChain['A'], struct.residuesByChain['A']);
+
+    // Epitope specifies residue 1 (exists) and residue 999 (non-existent in target structure)
+    const evalRes = evaluateAntigenicMimicry(alignment, [1, 999], false, [0.25, 0.40, 0.20, 0.15], 'manual', 'A');
+
+    // Distance for res 1 = 0 -> 1/(1+0) = 1.0; res 999 = 999.0 -> 0 score. Total mean = (1.0 + 0) / 2 = 0.50
+    expect(evalRes.subScores.s_epi).toBe(0.5);
+    // res 1 pLDDT=90 (>=70) -> 1 high conf; res 999 unmapped -> 0 high conf. Total fraction = 1 / 2 = 0.50
+    expect(evalRes.subScores.s_conf).toBe(0.5);
+  });
+});

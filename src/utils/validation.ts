@@ -94,3 +94,69 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export interface WeightValidationResult {
+  isValid: boolean;
+  error?: string;
+  weights: [number, number, number, number];
+}
+
+/**
+ * Validates and normalizes weights array (length 4).
+ * Ensures all elements are non-negative numbers in range [0, 1] and sum to 1.0.
+ */
+export function validateAndNormalizeWeights(
+  inputWeights: any,
+  defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15]
+): WeightValidationResult {
+  if (inputWeights === undefined || inputWeights === null) {
+    return { isValid: true, weights: defaultWeights };
+  }
+
+  if (!Array.isArray(inputWeights) || inputWeights.length !== 4) {
+    return {
+      isValid: false,
+      error: '가중치(weights)는 정확히 4개의 숫자 요소로 구성된 배열이어야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  const parsedNumbers: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = inputWeights[i];
+    if (typeof val !== 'number' || isNaN(val) || !isFinite(val)) {
+      return {
+        isValid: false,
+        error: `가중치 배열의 ${i + 1}번째 요소가 유효한 숫자가 아닙니다.`,
+        weights: defaultWeights,
+      };
+    }
+    if (val < 0 || val > 1) {
+      return {
+        isValid: false,
+        error: `가중치는 0 이상 1 이하의 범위 내에 있어야 합니다. (${i + 1}번째 값: ${val})`,
+        weights: defaultWeights,
+      };
+    }
+    parsedNumbers.push(val);
+  }
+
+  const sum = parsedNumbers.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      error: '가중치의 합은 0보다 커야 합니다.',
+      weights: defaultWeights,
+    };
+  }
+
+  // Normalize weights so their sum equals 1.0
+  const normalized: [number, number, number, number] = [
+    parsedNumbers[0] / sum,
+    parsedNumbers[1] / sum,
+    parsedNumbers[2] / sum,
+    parsedNumbers[3] / sum,
+  ];
+
+  return { isValid: true, weights: normalized };
+}
