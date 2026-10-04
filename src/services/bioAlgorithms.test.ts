@@ -202,3 +202,64 @@ describe('FASTA Input Parser', () => {
     expect(records[1].sequence).toBe('GHIKL');
   });
 });
+
+describe('Antigenic Mimicry Evaluation & Epitope/Weight Validation', () => {
+  it('should filter non-existent epitope residues, issue warning, and use consistent epitope denominator', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102     7.600   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A 100     0.100   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102     7.700   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const targetRes = targetStruct.residuesByChain['A'];
+    const candRes = candStruct.residuesByChain['A'];
+
+    const alignment = alignStructures(targetRes, candRes);
+
+    // Pass valid residues 100, 101, 102 AND non-existent residue 999
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101, 102, 999], false, [0.25, 0.4, 0.2, 0.15]);
+
+    expect(evalResult.autoSettings.warnings).toBeDefined();
+    expect(evalResult.autoSettings.warnings![0]).toContain('999');
+    expect(evalResult.evaluationRationale).toContain('999');
+
+    // Confirm all epitope subscores are valid numbers and final score is bounded 0-100
+    expect(evalResult.subScores.s_epi).toBeGreaterThan(0);
+    expect(evalResult.subScores.s_conf).toBeGreaterThan(0);
+    expect(evalResult.finalFitnessScore).toBeGreaterThan(0);
+    expect(evalResult.finalFitnessScore).toBeLessThanOrEqual(100);
+  });
+
+  it('should normalize custom weights passed to evaluateAntigenicMimicry', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    // Pass non-normalized weights [10, 20, 10, 10]
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101], false, [10, 20, 10, 10]);
+
+    expect(evalResult.weights).toEqual([0.2, 0.4, 0.2, 0.2]);
+    expect(evalResult.finalFitnessScore).toBeGreaterThan(0);
+    expect(evalResult.finalFitnessScore).toBeLessThanOrEqual(100);
+  });
+});
