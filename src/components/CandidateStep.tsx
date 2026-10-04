@@ -247,9 +247,23 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
           )}
 
           {error && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <span>{error}</span>
+            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                <span>{error}</span>
+              </div>
+              {(error.includes('PDB') || inputType === 'sequence') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputType('file');
+                    setError(null);
+                  }}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-100 font-bold border border-rose-500/50 transition text-xs"
+                >
+                  후보 PDB 직접 업로드
+                </button>
+              )}
             </div>
           )}
         </div>
