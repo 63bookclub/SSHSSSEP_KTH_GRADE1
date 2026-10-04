@@ -9,6 +9,8 @@
  * - Deterministic scientific rationale generator
  */
 
+import { validateAndNormalizeWeights } from '../utils/validation.ts';
+
 export interface Atom {
   serial: number;
   name: string;
@@ -1109,6 +1111,7 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    warnings?: string[];
   };
   alignment: {
     tmScoreTargetNorm: number;
@@ -1185,7 +1188,7 @@ export function evaluateAntigenicMimicry(
   
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  let rawEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,30 +1196,56 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        rawEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => rawEpitopeSet.add(r.toString()));
   }
 
-  // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
-  let isTemporary = false;
-  if (effectiveEpitopeSet.size === 0) {
-    isTemporary = true;
-    effectiveEpitopeSet = new Set(
-      targetResidues
-        .filter(r => (r.rsa || 0) >= 0.2)
-        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode))
-    );
+  // Validate raw epitope residues against target structure residues
+  const warnings: string[] = [];
+  const nonExistentResidues: string[] = [];
+  const validEpitopeSet = new Set<string>();
+
+  for (const epRes of rawEpitopeSet) {
+    const exists = targetResidues.some(r => {
+      const k1 = r.resKey || getResidueKey(r.resSeq, r.iCode);
+      const k2 = r.resSeq.toString();
+      return k1 === epRes || k2 === epRes;
+    });
+    if (exists) {
+      validEpitopeSet.add(epRes);
+    } else {
+      nonExistentResidues.push(epRes);
+    }
   }
+
+  if (nonExistentResidues.length > 0) {
+    warnings.push(`지정된 에피톱 잔기 중 타겟 구조에 존재하지 않는 잔기 (${nonExistentResidues.join(', ')}) ${nonExistentResidues.length}개가 제외되었습니다.`);
+  }
+
+  // Fallback check: if valid epitope set is empty, auto-populate with RSA >= 0.2
+  let isTemporary = false;
+  if (validEpitopeSet.size === 0) {
+    isTemporary = true;
+    targetResidues
+      .filter(r => (r.rsa || 0) >= 0.2)
+      .forEach(r => validEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode)));
+    if (validEpitopeSet.size === 0) {
+      targetResidues.forEach(r => validEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode)));
+    }
+    warnings.push('유효한 에피톱 잔기가 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.');
+  }
+
+  const effectiveEpitopeSet = validEpitopeSet;
 
   // Calculate residue level data
   const residueList: EvaluationResult['residues'] = [];
   const epiDistances: number[] = [];
   const rsaDiffs: number[] = [];
   let confHighCount = 0;
-  let totalEpitopeCount = effectiveEpitopeSet.size;
+  const totalEpitopeCount = effectiveEpitopeSet.size;
 
   for (const targetRes of targetResidues) {
     const tKey = targetRes.resKey || getResidueKey(targetRes.resSeq, targetRes.iCode);
@@ -1279,6 +1308,8 @@ export function evaluateAntigenicMimicry(
 
       for (const rSeq of epSet) {
         const key = rSeq.toString();
+        const exists = targetResidues.some(r => (r.resKey || getResidueKey(r.resSeq, r.iCode)) === key || r.resSeq.toString() === key);
+        if (!exists) continue; // Skip non-existent target residues in multi-epitope breakdown
         const pair = pairByTargetRes.get(key);
         if (pair) {
           epDists.push(pair.distance);
@@ -1339,7 +1370,9 @@ export function evaluateAntigenicMimicry(
     : 0.85;
 
   // 4. Final fitness score
-  const [w0, w1, w2, w3] = customWeights;
+  const weightVal = validateAndNormalizeWeights(customWeights);
+  const normalizedWeights = weightVal.normalizedWeights;
+  const [w0, w1, w2, w3] = normalizedWeights;
   const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
@@ -1389,6 +1422,10 @@ export function evaluateAntigenicMimicry(
     `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
   ];
 
+  if (nonExistentResidues.length > 0) {
+    rationaleSections.push(`\n※ 경고: 지정된 에피톱 잔기 중 타겟 구조에 존재하지 않는 잔기 (${nonExistentResidues.join(', ')}) ${nonExistentResidues.length}개가 제외되었습니다.`);
+  }
+
   if (isTemporary) {
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
@@ -1400,6 +1437,7 @@ export function evaluateAntigenicMimicry(
       targetChain,
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
+      warnings: warnings.length > 0 ? warnings : undefined,
     },
     alignment: {
       tmScoreTargetNorm,
@@ -1414,7 +1452,7 @@ export function evaluateAntigenicMimicry(
       s_exp: Math.round(sExp * 1000) / 1000,
       s_conf: Math.round(sConf * 1000) / 1000,
     },
-    weights: customWeights,
+    weights: normalizedWeights,
     finalFitnessScore,
     evaluationRationale: rationaleSections.join('\n'),
     epitopeBreakdown,
@@ -1425,7 +1463,7 @@ export function evaluateAntigenicMimicry(
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       parameters: {
-        weights: customWeights,
+        weights: normalizedWeights,
         probeRadius: 1.4,
         d0_target: alignmentResult.tmScoreTargetNorm,
         epitopeCount: effectiveEpitopeSet.size,
