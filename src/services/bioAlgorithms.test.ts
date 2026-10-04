@@ -314,3 +314,15 @@ END
     expect(evalResult.reproducibility.inputHash.length).toBeGreaterThan(0);
   });
 });
+
+describe('Candidate Input Validation', () => {
+  it('should validate candidate sequence inputs correctly', () => {
+    const { validateAminoAcidSequence } = require('../utils/validation');
+    const valid = validateAminoAcidSequence('ACDEFGHIKLMNPQRSTVWY');
+    expect(valid.isValid).toBe(true);
+
+    const invalid = validateAminoAcidSequence('ACDEF123');
+    expect(invalid.isValid).toBe(false);
+    expect(invalid.error).toContain('유효하지 않은 아미노산 문자가 포함되어 있습니다');
+  });
+});
