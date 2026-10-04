@@ -1109,6 +1109,7 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    invalidEpitopeResidues?: (number | string)[];
   };
   alignment: {
     tmScoreTargetNorm: number;
@@ -1183,9 +1184,16 @@ export function evaluateAntigenicMimicry(
 
   const isFragment = alignmentResult.candResidues.length < 0.7 * alignmentResult.targetResidues.length;
   
+  // Set of target residue keys existing in the target structure
+  const validTargetKeys = new Set<string>();
+  for (const r of targetResidues) {
+    validTargetKeys.add(r.resKey || getResidueKey(r.resSeq, r.iCode));
+    validTargetKeys.add(r.resSeq.toString());
+  }
+
   // Epitope mapping for multi-epitope entities
   const resToEpitopeId = new Map<string, string>();
-  let effectiveEpitopeSet = new Set<string>();
+  let requestedEpitopeSet = new Set<string>();
 
   if (multiEpitopes && multiEpitopes.length > 0) {
     multiEpitopes.forEach((ep) => {
@@ -1193,11 +1201,23 @@ export function evaluateAntigenicMimicry(
       resList.forEach((rSeq) => {
         const key = rSeq.toString();
         resToEpitopeId.set(key, ep.id);
-        effectiveEpitopeSet.add(key);
+        requestedEpitopeSet.add(key);
       });
     });
   } else {
-    epitopeResidues.forEach(r => effectiveEpitopeSet.add(r.toString()));
+    epitopeResidues.forEach(r => requestedEpitopeSet.add(r.toString()));
+  }
+
+  // Filter requested epitope residues against valid target structure residues
+  const invalidEpitopeResiduesList: string[] = [];
+  let effectiveEpitopeSet = new Set<string>();
+
+  for (const epKey of requestedEpitopeSet) {
+    if (validTargetKeys.has(epKey)) {
+      effectiveEpitopeSet.add(epKey);
+    } else {
+      invalidEpitopeResiduesList.push(epKey);
+    }
   }
 
   // Fallback check: if epitope set is empty, auto-populate with RSA >= 0.2
@@ -1274,11 +1294,10 @@ export function evaluateAntigenicMimicry(
 
     multiEpitopes.forEach((ep, idx) => {
       const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-      const epSet = new Set(resList);
+      const epSet = new Set(resList.map(r => r.toString()).filter(k => validTargetKeys.has(k)));
       const epDists: number[] = [];
 
-      for (const rSeq of epSet) {
-        const key = rSeq.toString();
+      for (const key of epSet) {
         const pair = pairByTargetRes.get(key);
         if (pair) {
           epDists.push(pair.distance);
@@ -1389,6 +1408,10 @@ export function evaluateAntigenicMimicry(
     `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
   ];
 
+  if (invalidEpitopeResiduesList.length > 0) {
+    rationaleSections.push(`\n※ 경고: 지정된 에피톱 잔기 중 타겟 단백질 체인(${targetChain})에 존재하지 않는 ${invalidEpitopeResiduesList.length}개 잔기(${invalidEpitopeResiduesList.join(', ')})가 점수 계산에서 제외되었습니다.`);
+  }
+
   if (isTemporary) {
     rationaleSections.push(`\n※ 참고: 지정된 실험 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하여 분석되었습니다.`);
   }
@@ -1400,6 +1423,7 @@ export function evaluateAntigenicMimicry(
       targetChain,
       isTemporaryEpitope: isTemporary,
       isExperimentalCandidate,
+      invalidEpitopeResidues: invalidEpitopeResiduesList.length > 0 ? invalidEpitopeResiduesList : undefined,
     },
     alignment: {
       tmScoreTargetNorm,

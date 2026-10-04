@@ -3,6 +3,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './validation.ts';
 
 describe('Validation Utilities', () => {
@@ -73,6 +74,46 @@ MNPQR STVWY`;
       const res = validateAminoAcidSequence(longSeq, { maxLen: 600 });
       expect(res.isValid).toBe(false);
       expect(res.error).toContain('제한(600 aa)을 초과했습니다');
+    });
+  });
+
+  describe('validateAndNormalizeWeights', () => {
+    test('should return default weights if undefined or null', () => {
+      const res1 = validateAndNormalizeWeights(undefined);
+      expect(res1.isValid).toBe(true);
+      expect(res1.normalizedWeights).toEqual([0.25, 0.40, 0.20, 0.15]);
+
+      const res2 = validateAndNormalizeWeights(null);
+      expect(res2.isValid).toBe(true);
+      expect(res2.normalizedWeights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should accept valid weights that sum to 1.0', () => {
+      const res = validateAndNormalizeWeights([0.25, 0.40, 0.20, 0.15]);
+      expect(res.isValid).toBe(true);
+      expect(res.normalizedWeights).toEqual([0.25, 0.40, 0.20, 0.15]);
+    });
+
+    test('should normalize unnormalized positive weights so sum equals 1.0', () => {
+      const res = validateAndNormalizeWeights([1, 2, 1, 1]); // sum = 5
+      expect(res.isValid).toBe(true);
+      const sum = res.normalizedWeights.reduce((a, b) => a + b, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-4);
+      expect(res.normalizedWeights).toEqual([0.2, 0.4, 0.2, 0.2]);
+    });
+
+    test('should reject invalid input types and array lengths', () => {
+      expect(validateAndNormalizeWeights('invalid').isValid).toBe(false);
+      expect(validateAndNormalizeWeights(123).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0.25, 0.4]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0.2, 0.2, 0.2, 0.2, 0.2]).isValid).toBe(false);
+    });
+
+    test('should reject negative values, strings, NaN, or non-positive sums', () => {
+      expect(validateAndNormalizeWeights([-0.1, 0.5, 0.3, 0.3]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights(['0.25', 0.4, 0.2, 0.15]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([NaN, 0.4, 0.2, 0.15]).isValid).toBe(false);
+      expect(validateAndNormalizeWeights([0, 0, 0, 0]).isValid).toBe(false);
     });
   });
 });

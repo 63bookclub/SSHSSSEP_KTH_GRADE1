@@ -24,6 +24,7 @@ import {
   isValidPdbId,
   isValidUniprotId,
   validateAminoAcidSequence,
+  validateAndNormalizeWeights,
 } from './src/utils/validation.ts';
 
 const app = express();
@@ -553,11 +554,13 @@ app.post('/api/v1/jobs', async (req, res) => {
     if (!candidate) return res.status(404).json({ error: '후보 구조를 찾을 수 없습니다.' });
     if (!epitope) return res.status(404).json({ error: '에피톱 정보를 찾을 수 없습니다.' });
 
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.isValid) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
+
     const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
 
     const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
     const candResidues = candidate.structure.residuesByChain[candidate.chain] || Object.values(candidate.structure.residuesByChain)[0] || [];
@@ -673,6 +676,7 @@ app.get('/api/v1/jobs/:job_id', (req, res) => {
         target_chain: auto.target_chain || auto.targetChain || 'A',
         is_temporary_epitope: auto.is_temporary_epitope ?? auto.isTemporaryEpitope ?? false,
         is_experimental_candidate: auto.is_experimental_candidate ?? auto.isExperimentalCandidate ?? false,
+        invalid_epitope_residues: auto.invalid_epitope_residues || auto.invalidEpitopeResidues || undefined,
       },
       alignment: {
         tm_score_target_norm: align.tm_score_target_norm ?? align.tmScoreTargetNorm ?? 0,
@@ -933,10 +937,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     });
 
     // --- 4. Alignment & Antigenic Mimicry Evaluation ---
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.isValid) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
 
     const multiEpitopesList: MultiEpitopeEntity[] | undefined = Array.isArray(req.body.multi_epitopes)
       ? req.body.multi_epitopes
@@ -986,6 +991,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           target_chain: targetChain,
           is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
           is_experimental_candidate: isCandExperimental,
+          invalid_epitope_residues: evaluation.autoSettings.invalidEpitopeResidues,
         },
         alignment: {
           tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
@@ -1111,10 +1117,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       epitopeMethod = 'temporary_rsa_fallback';
     }
 
-    const customWeights: [number, number, number, number] =
-      Array.isArray(weights) && weights.length === 4
-        ? [weights[0], weights[1], weights[2], weights[3]]
-        : [0.25, 0.40, 0.20, 0.15];
+    const weightVal = validateAndNormalizeWeights(weights);
+    if (!weightVal.isValid) {
+      return res.status(400).json({ error: weightVal.error });
+    }
+    const customWeights = weightVal.normalizedWeights;
 
     // 3. Evaluate each Candidate Entity
     const results = [];
@@ -1223,6 +1230,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
               target_chain: targetChain,
               is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
               is_experimental_candidate: isCandExperimental,
+              invalid_epitope_residues: evaluation.autoSettings.invalidEpitopeResidues,
             },
             alignment: {
               tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
