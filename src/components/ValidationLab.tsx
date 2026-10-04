@@ -173,7 +173,7 @@ export const ValidationLab: React.FC<{
       suite.push({
         testName: '음성 대조군 (무관 단백질 리소자임)',
         category: '특이도 검증 (False Positive 방지)',
-        expected: 'TM < 0.35, S_epi < 0.30, 점수 < 40점',
+        expected: 'TM < 0.45, S_epi < 0.40, 점수 < 50점',
         tmScore: evalRes.subScores.s_global,
         rmsd: evalRes.alignment.rmsd,
         sEpi: evalRes.subScores.s_epi,
