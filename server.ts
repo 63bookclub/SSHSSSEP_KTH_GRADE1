@@ -480,24 +480,11 @@ app.post('/api/v1/candidates', async (req, res) => {
         console.warn('ESMFold API prediction failed or timed out, generating high-quality modeled structure:', esmErr);
       }
 
-      // If ESMFold is slow/timed out, build model coordinates with pLDDT
+      // If ESMFold is slow or failed, return 503 informing user to upload predicted PDB
       if (!esmSuccess) {
-        let templateResidues: Residue[] = [];
-        const targetId = req.body.target_id;
-        if (targetId && targetsStore.has(targetId)) {
-          const tgt = targetsStore.get(targetId)!;
-          templateResidues = tgt.structure.residuesByChain[req.body.target_chain || 'E'] || Object.values(tgt.structure.residuesByChain)[0] || [];
-        } else if (targetsStore.size > 0) {
-          const allTargets = Array.from(targetsStore.values());
-          const lastTgt = allTargets[allTargets.length - 1];
-          templateResidues = lastTgt.structure.residuesByChain['E'] || lastTgt.structure.residuesByChain['A'] || Object.values(lastTgt.structure.residuesByChain)[0] || [];
-        }
-
-        if (templateResidues.length > 0) {
-          structureText = threadSequenceOnTemplate(parsedSeq, templateResidues, 'A');
-        } else {
-          structureText = generateAlphaHelixPdb(parsedSeq, 'A', 1, [0, 0, 0], 85.0);
-        }
+        return res.status(503).json({
+          error: 'ESMFold 구조 예측 서버가 응답하지 않거나 오류가 발생했습니다. 외부에서 예측한 PDB를 업로드해 주세요.',
+        });
       }
     }
 
