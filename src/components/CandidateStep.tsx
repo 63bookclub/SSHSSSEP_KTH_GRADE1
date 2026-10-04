@@ -256,7 +256,21 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
 
         {/* Confirmation Summary */}
         {candResult && (
-          <div className="mt-5 pt-4 border-t border-slate-800">
+          <div className="mt-5 pt-4 border-t border-slate-800 space-y-3">
+            {candResult.fallback_used && (
+              <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs flex items-start space-x-2.5 shadow-md">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-400" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-300">
+                    ESMFold 예측 서버 미응답 (모사 대체 구조 사용됨)
+                  </p>
+                  <p className="leading-relaxed">
+                    {candResult.prediction_warning || '외부 예측 서버가 응답하지 않거나 실패하여 타겟 모사 구조로 대체되었습니다. 정밀한 평가를 위해 외부(ColabFold/AlphaFold Server)에서 예측한 PDB를 직접 업로드해 주세요.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div className="flex items-center space-x-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -267,6 +281,10 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
                 {candResult.is_experimental ? (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
                     실험 구조 (S_conf=1.0)
+                  </span>
+                ) : candResult.fallback_used ? (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-800 text-[10px] font-bold">
+                    모사 대체 구조
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 text-[10px] font-bold">

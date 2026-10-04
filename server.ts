@@ -480,7 +480,7 @@ app.post('/api/v1/candidates', async (req, res) => {
         console.warn('ESMFold API prediction failed or timed out, generating high-quality modeled structure:', esmErr);
       }
 
-      // If ESMFold is slow/timed out, build model coordinates with pLDDT
+      // If ESMFold is slow/timed out, build model coordinates with pLDDT and flag fallback
       if (!esmSuccess) {
         let templateResidues: Residue[] = [];
         const targetId = req.body.target_id;
@@ -509,6 +509,9 @@ app.post('/api/v1/candidates', async (req, res) => {
       return res.status(400).json({ error: '후보 물질 구조 파싱에 실패했습니다. 유효한 PDB 좌표인지 확인해 주세요.' });
     }
 
+    const fallbackUsed = !isExperimental && sourceType !== 'pdb' && structureText !== '' && !structureText.includes('HEADER') && !structureText.includes('REMARK  1 ESMFold');
+    const isSimulated = fallbackUsed;
+
     const candChain = structure.chains[0];
     const resList = structure.residuesByChain[candChain] || [];
     const allCandResidues = Object.values(structure.residuesByChain).flat();
@@ -526,6 +529,7 @@ app.post('/api/v1/candidates', async (req, res) => {
       isExperimental,
       chain: candChain,
       createdAtMs: Date.now(),
+      isSimulated,
     });
 
     res.json({
@@ -535,6 +539,11 @@ app.post('/api/v1/candidates', async (req, res) => {
       chain: candChain,
       residues_count: resList.length,
       sample_pdb: structure.rawPdb,
+      fallback_used: fallbackUsed,
+      is_simulated: isSimulated,
+      prediction_warning: fallbackUsed
+        ? 'ESMFold 예측 서버가 응답하지 않거나 실패하여 모사 구조로 대체되었습니다. 정밀한 평가를 위해 외부에서 예측한 PDB를 업로드해 주세요.'
+        : undefined,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || '후보 물질 처리 중 오류가 발생했습니다.' });

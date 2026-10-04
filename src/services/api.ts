@@ -59,6 +59,9 @@ export interface CandidateResponse {
   chain: string;
   residues_count: number;
   sample_pdb?: string;
+  fallback_used?: boolean;
+  is_simulated?: boolean;
+  prediction_warning?: string;
 }
 
 export interface JobSubmission {
