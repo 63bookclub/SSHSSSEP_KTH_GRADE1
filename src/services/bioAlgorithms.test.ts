@@ -193,12 +193,68 @@ describe('FASTA Input Parser', () => {
   });
 
   it('should correctly detect multiple FASTA records', () => {
-    const multiFasta = `>seq1\nACDEF\n>seq2\nGHIKL\n`;
-    const records = parseFastaInput(multiFasta);
+    const fastaText = `>seq1\nACDEF\n>seq2\nGHIKL\n`;
+    const records = parseFastaInput(fastaText);
     expect(records.length).toBe(2);
     expect(records[0].header).toBe('seq1');
     expect(records[0].sequence).toBe('ACDEF');
     expect(records[1].header).toBe('seq2');
     expect(records[1].sequence).toBe('GHIKL');
+  });
+});
+
+describe('Epitope Filtering & Denominator Consistency in Evaluation', () => {
+  it('should filter non-existent epitope numbers and calculate S_epi and S_conf with identical valid epitope residue denominators', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 90.00           C
+ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  SER A   3       7.600   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  ALA A   1       0.100   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A   2       3.900   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A   3       7.700   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['A']
+    );
+
+    // Provide non-existent epitope numbers 99 and 100 alongside valid residues 1 and 2
+    const epitopeResidues = [1, 2, 99, 100];
+
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      epitopeResidues,
+      false, // non-experimental
+      [0.25, 0.40, 0.20, 0.15],
+      'manual',
+      'A'
+    );
+
+    // invalidEpitopeResidues should record 99 and 100
+    expect(evalResult.autoSettings.invalidEpitopeResidues).toBeDefined();
+    expect(evalResult.autoSettings.invalidEpitopeResidues).toEqual(['99', '100']);
+
+    // Rationale should include warning message
+    expect(evalResult.evaluationRationale).toContain('존재하지 않는 2개 잔기(99, 100)가 점수 계산에서 제외되었습니다');
+
+    // Only valid epitope residues 1 and 2 should be marked in_epitope
+    const epiResiduesInList = evalResult.residues.filter(r => r.in_epitope);
+    expect(epiResiduesInList.length).toBe(2);
+    expect(epiResiduesInList.map(r => r.res_id)).toEqual(['1', '2']);
+
+    // S_conf should be calculated against valid epitope count (2), NOT 4
+    // Residues 1 and 2 both have pLDDT >= 70 (80.0 and 85.0), so 2 / 2 = 1.0
+    expect(evalResult.subScores.s_conf).toBe(1.0);
   });
 });

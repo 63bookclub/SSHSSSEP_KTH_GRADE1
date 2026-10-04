@@ -94,3 +94,87 @@ export function validateAminoAcidSequence(
 
   return { isValid: true, sequence: cleanSeq };
 }
+
+export interface WeightValidationResult {
+  isValid: boolean;
+  normalizedWeights: [number, number, number, number];
+  error?: string;
+}
+
+/**
+ * Validates and normalizes weights for scoring (S_global, S_epi, S_exp, S_conf).
+ * Expects an array of 4 non-negative finite numbers with a positive sum.
+ * Normalizes the weights so their sum equals 1.0.
+ */
+export function validateAndNormalizeWeights(input: any): WeightValidationResult {
+  const defaultWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15];
+
+  if (input === undefined || input === null) {
+    return { isValid: true, normalizedWeights: defaultWeights };
+  }
+
+  if (!Array.isArray(input)) {
+    return {
+      isValid: false,
+      normalizedWeights: defaultWeights,
+      error: '가중치(weights)는 4개의 숫자로 구성된 배열이어야 합니다.',
+    };
+  }
+
+  if (input.length !== 4) {
+    return {
+      isValid: false,
+      normalizedWeights: defaultWeights,
+      error: `가중치(weights) 배열의 길이는 정확히 4이어야 합니다. (입력된 길이: ${input.length})`,
+    };
+  }
+
+  const numWeights: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const val = input[i];
+    if (typeof val !== 'number' || isNaN(val) || !isFinite(val)) {
+      return {
+        isValid: false,
+        normalizedWeights: defaultWeights,
+        error: `가중치 ${i + 1}번째 항목('${val}')이 유효한 숫자가 아닙니다.`,
+      };
+    }
+    if (val < 0) {
+      return {
+        isValid: false,
+        normalizedWeights: defaultWeights,
+        error: `가중치 ${i + 1}번째 항목(${val})이 음수입니다. 0 이상의 숫자만 허용됩니다.`,
+      };
+    }
+    numWeights.push(val);
+  }
+
+  const sum = numWeights.reduce((a, b) => a + b, 0);
+  if (sum <= 0) {
+    return {
+      isValid: false,
+      normalizedWeights: defaultWeights,
+      error: '가중치의 합은 0보다 커야 합니다.',
+    };
+  }
+
+  // Normalize so sum equals 1.0
+  const normalized: [number, number, number, number] = [
+    Math.round((numWeights[0] / sum) * 10000) / 10000,
+    Math.round((numWeights[1] / sum) * 10000) / 10000,
+    Math.round((numWeights[2] / sum) * 10000) / 10000,
+    Math.round((numWeights[3] / sum) * 10000) / 10000,
+  ];
+
+  // Adjust precision rounding so sum is exactly 1.0
+  const normSum = normalized.reduce((a, b) => a + b, 0);
+  const diff = Math.round((1.0 - normSum) * 10000) / 10000;
+  if (diff !== 0) {
+    normalized[1] = Math.round((normalized[1] + diff) * 10000) / 10000;
+  }
+
+  return {
+    isValid: true,
+    normalizedWeights: normalized,
+  };
+}
