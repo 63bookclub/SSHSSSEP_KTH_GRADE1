@@ -9,8 +9,36 @@ import {
   parseResidueRange,
   calculateSASA,
   parseFastaInput,
+  computeKabsch,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
+
+describe('Kabsch Alignment Algorithm', () => {
+  it('should compute identity rotation and zero translation for non-collinear identical point sets', () => {
+    const P: [number, number, number][] = [
+      [1, 0, 0],
+      [0, 2, 0],
+      [0, 0, 3],
+      [2, 2, 2],
+    ];
+    const Q: [number, number, number][] = [
+      [1, 0, 0],
+      [0, 2, 0],
+      [0, 0, 3],
+      [2, 2, 2],
+    ];
+
+    const result = computeKabsch(P, Q);
+    expect(result.R).toBeDefined();
+    expect(result.t).toBeDefined();
+    expect(Math.abs(result.R[0][0] - 1.0)).toBeLessThan(1e-4);
+    expect(Math.abs(result.R[1][1] - 1.0)).toBeLessThan(1e-4);
+    expect(Math.abs(result.R[2][2] - 1.0)).toBeLessThan(1e-4);
+    expect(Math.abs(result.t[0])).toBeLessThan(1e-4);
+    expect(Math.abs(result.t[1])).toBeLessThan(1e-4);
+    expect(Math.abs(result.t[2])).toBeLessThan(1e-4);
+  });
+});
 
 describe('PDB & mmCIF Parser with Insertion Codes & AltLoc', () => {
   it('should parse PDB lines with insertion codes without overwriting residues', () => {
