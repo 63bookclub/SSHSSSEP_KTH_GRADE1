@@ -70,6 +70,7 @@ export interface JobSubmission {
 }
 
 export interface JobResultData {
+  job_id?: string;
   status: 'done' | 'running' | 'failed' | 'queued';
   data?: {
     auto_settings: {
@@ -107,9 +108,12 @@ export interface JobResultData {
       similarity?: number;
     }[];
     reproducibility: {
-      tool_versions: Record<string, string>;
+      tool_versions?: Record<string, string>;
+      toolVersions?: Record<string, string>;
+      databaseVersions?: Record<string, string>;
       parameters: Record<string, any>;
       timestamp: string;
+      inputHash?: string;
     };
     aligned_pdb_download_url: string;
     target_pdb?: string;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Header,
 } from './components/Header.tsx';
@@ -31,7 +31,19 @@ import {
   RefreshCw,
   AlertCircle,
   Sparkles,
+  History,
+  Trash2,
 } from 'lucide-react';
+
+interface SavedHistoryItem {
+  id: string;
+  timestamp: string;
+  score: number;
+  mode: string;
+  jobResult: JobResultData;
+  targetPdb?: string;
+  candidatePdb?: string;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'workflow' | 'validation'>('workflow');
@@ -48,6 +60,61 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+
+  // Analysis History in LocalStorage
+  const [historyItems, setHistoryItems] = useState<SavedHistoryItem[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ssbd_analysis_history');
+      if (saved) {
+        setHistoryItems(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to load history from localStorage', e);
+    }
+  }, []);
+
+  const saveToHistory = (result: JobResultData, targetPdb?: string, candidatePdb?: string) => {
+    try {
+      const newItem: SavedHistoryItem = {
+        id: result.job_id || result.job_id || Date.now().toString(),
+        timestamp: result.data?.reproducibility?.timestamp || new Date().toISOString(),
+        score: result.data?.final_fitness_score ?? 0,
+        mode: result.data?.auto_settings?.mode || 'full',
+        jobResult: result,
+        targetPdb: targetPdb || result.data?.target_pdb,
+        candidatePdb: candidatePdb || result.data?.aligned_candidate_pdb,
+      };
+
+      setHistoryItems((prev) => {
+        const filtered = prev.filter((item) => item.id !== newItem.id);
+        const updated = [newItem, ...filtered].slice(0, 20); // Keep last 20 analyses
+        localStorage.setItem('ssbd_analysis_history', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (e) {
+      console.error('Failed to save history to localStorage', e);
+    }
+  };
+
+  const clearHistory = () => {
+    localStorage.removeItem('ssbd_analysis_history');
+    setHistoryItems([]);
+  };
+
+  const loadFromHistory = (item: SavedHistoryItem) => {
+    setJobResult(item.jobResult);
+    if (item.targetPdb) {
+      setTargetData((prev) => prev ? { ...prev, sample_pdb: item.targetPdb } : null);
+    }
+    if (item.candidatePdb) {
+      setCandidateData((prev) => prev ? { ...prev, sample_pdb: item.candidatePdb } : null);
+    }
+    setCurrentStep(4);
+    setShowHistoryModal(false);
+  };
 
   // Handler to inspect a specific candidate from batch screening
   const handleInspectBatchCandidate = (
@@ -75,6 +142,7 @@ export default function App() {
     try {
       const res = await quickAnalyze(params);
       setJobResult(res);
+      saveToHistory(res);
       setCurrentStep(4);
     } catch (err: any) {
       setAnalysisError(err.message || '분석 중 오류가 발생했습니다.');
@@ -136,6 +204,7 @@ export default function App() {
 
       const res = await getJobResult(job.job_id);
       setJobResult(res);
+      saveToHistory(res);
       setCurrentStep(4);
       setActiveTab('workflow');
     } catch (err: any) {
@@ -167,6 +236,7 @@ export default function App() {
         throw new Error(res.error || '분석 작업이 실패했습니다.');
       }
       setJobResult(res);
+      saveToHistory(res);
       setCurrentStep(4);
     } catch (err: any) {
       setAnalysisError(err.message || '구조 정렬 및 점수 산출 중 오류가 발생했습니다.');
@@ -236,15 +306,25 @@ export default function App() {
                 </button>
               </div>
 
-              {jobResult && (
+              <div className="flex items-center space-x-2 self-start sm:self-auto">
                 <button
-                  onClick={handleResetToNew}
-                  className="self-start sm:self-auto text-xs px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center space-x-1.5 shadow-sm"
+                  onClick={() => setShowHistoryModal(true)}
+                  className="text-xs px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center space-x-1.5 shadow-sm relative"
                 >
-                  <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>새로운 단백질 분석하기</span>
+                  <History className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>분석 이력 ({historyItems.length})</span>
                 </button>
-              )}
+
+                {jobResult && (
+                  <button
+                    onClick={handleResetToNew}
+                    className="text-xs px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center space-x-1.5 shadow-sm"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>새로운 단백질 분석하기</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Quick Mode View */}
@@ -551,6 +631,89 @@ export default function App() {
 
       {/* Glossary Modal */}
       <GlossaryModal isOpen={isGlossaryOpen} onClose={() => setIsGlossaryOpen(false)} />
+
+      {/* LocalStorage Analysis History Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white">최근 분석 이력 (Saved History)</h3>
+                <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
+                  {historyItems.length}개 저장됨
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                {historyItems.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 rounded bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/40 transition flex items-center space-x-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>전체 삭제</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-slate-400 hover:text-white text-lg font-bold px-2"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 overflow-y-auto flex-1 space-y-2">
+              {historyItems.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 text-xs">
+                  저장된 분석 이력이 없습니다. 새로운 분석을 실행하면 자동으로 브라우저에 저장됩니다.
+                </div>
+              ) : (
+                historyItems.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => loadFromHistory(item)}
+                    className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-800/50 cursor-pointer transition flex items-center justify-between group"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono text-xs text-cyan-300 font-bold">
+                          Job ID: {item.id.substring(0, 12)}...
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">
+                          {item.mode === 'fragment' ? '단편' : '전체'}
+                        </span>
+                        {item.jobResult.data?.reproducibility?.inputHash && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 font-mono border border-slate-800">
+                            #{item.jobResult.data.reproducibility.inputHash}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        분석 시각: {item.timestamp ? item.timestamp.substring(0, 19).replace('T', ' ') : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <div className="text-right">
+                        <span className="text-xs text-slate-400 block">항원성 적합도</span>
+                        <span className="text-sm font-black text-cyan-400">
+                          {item.score.toFixed(1)}점
+                        </span>
+                      </div>
+                      <span className="text-xs text-cyan-400 group-hover:translate-x-1 transition font-bold">
+                        열기 →
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

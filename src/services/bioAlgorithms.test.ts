@@ -262,4 +262,27 @@ END
     expect(evalResult.finalFitnessScore).toBeGreaterThan(0);
     expect(evalResult.finalFitnessScore).toBeLessThanOrEqual(100);
   });
+
+  it('should generate complete reproducibility metadata including databaseVersions, inputHash, and timestamp', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101], false, [0.25, 0.40, 0.20, 0.15]);
+
+    expect(evalResult.reproducibility).toBeDefined();
+    expect(evalResult.reproducibility.timestamp).toBeDefined();
+    expect(evalResult.reproducibility.databaseVersions).toBeDefined();
+    expect(evalResult.reproducibility.databaseVersions['AlphaFold-DB']).toContain('v4');
+    expect(evalResult.reproducibility.inputHash).toBeDefined();
+    expect(typeof evalResult.reproducibility.inputHash).toBe('string');
+    expect(evalResult.reproducibility.inputHash.length).toBeGreaterThan(0);
+  });
 });
