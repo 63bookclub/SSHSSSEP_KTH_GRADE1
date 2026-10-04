@@ -1152,9 +1152,23 @@ export interface EvaluationResult {
   }[];
   reproducibility: {
     toolVersions: Record<string, string>;
+    databaseVersions: Record<string, string>;
     parameters: Record<string, any>;
     timestamp: string;
+    inputHash: string;
   };
+}
+
+/**
+ * Simple fnv1a or djb2 hash function for deterministic input hashing across environments
+ */
+export function computeInputHash(inputString: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < inputString.length; i++) {
+    hash ^= inputString.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 export function evaluateAntigenicMimicry(
@@ -1164,7 +1178,8 @@ export function evaluateAntigenicMimicry(
   customWeights: [number, number, number, number] = [0.25, 0.40, 0.20, 0.15],
   epitopeSource: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = 'manual',
   targetChain = 'A',
-  multiEpitopes?: MultiEpitopeEntity[]
+  multiEpitopes?: MultiEpitopeEntity[],
+  inputMeta?: { targetId?: string; candidateId?: string; targetChain?: string; candChain?: string }
 ): EvaluationResult {
   const { sGlobal, tmScoreTargetNorm, tmScoreCandNorm, rmsd, alignedLength, coverage, alignedPairs, targetResidues, candResidues } = alignmentResult;
 
@@ -1459,16 +1474,37 @@ export function evaluateAntigenicMimicry(
     residues: residueList,
     reproducibility: {
       toolVersions: {
-        'SSBD-Engine': '1.0.0 (US-align/TM-align algorithm compatible)',
+        'SSBD-Engine': '1.0.0 (TM-score approximation algorithm)',
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
+      },
+      databaseVersions: {
+        'RCSB-PDB': 'REST API v1 / mmCIF',
+        'AlphaFold-DB': 'v4 Structure Database',
+        'ESMFold': 'ESM Metagenomic Atlas API v1',
       },
       parameters: {
         weights: normalizedWeights,
         probeRadius: 1.4,
         d0_target: alignmentResult.tmScoreTargetNorm,
         epitopeCount: effectiveEpitopeSet.size,
+        epitopeSource,
+        targetChain,
+        isExperimentalCandidate,
       },
       timestamp: new Date().toISOString(),
+      inputHash: computeInputHash(
+        JSON.stringify({
+          targetId: inputMeta?.targetId || targetChain,
+          candidateId: inputMeta?.candidateId || 'candidate',
+          targetChain,
+          candChain: inputMeta?.candChain || 'A',
+          epitopes: Array.from(effectiveEpitopeSet).sort(),
+          weights: normalizedWeights,
+          epitopeSource,
+          targetResCount: targetResidues.length,
+          candResCount: candResidues.length,
+        })
+      ),
     },
   };
 }

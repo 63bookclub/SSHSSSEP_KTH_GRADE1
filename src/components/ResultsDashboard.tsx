@@ -233,9 +233,14 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
             <Info className="w-4 h-4 text-cyan-400" />
             <span>이렇게 정했어요 (분석 파이프라인 자동 판정 요약)</span>
           </span>
-          <span className="text-[11px] text-slate-500 font-mono">
-            {result.reproducibility?.timestamp?.substring(0, 19).replace('T', ' ')}
-          </span>
+          <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono">
+            {result.reproducibility?.inputHash && (
+              <span className="bg-slate-800 text-cyan-400 px-1.5 py-0.5 rounded text-[10px]">
+                Hash: {result.reproducibility.inputHash}
+              </span>
+            )}
+            <span>{result.reproducibility?.timestamp?.substring(0, 19).replace('T', ' ')}</span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
