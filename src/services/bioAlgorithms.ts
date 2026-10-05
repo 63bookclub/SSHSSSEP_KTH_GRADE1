@@ -1523,17 +1523,8 @@ export function threadSequenceOnTemplate(
   let serial = 1;
   const tempCaResidues = templateResidues.filter(r => r.caAtom !== null);
 
-  // Compute sequence identity to template
-  let matches = 0;
-  const minLen = Math.min(candidateSeq.length, tempCaResidues.length);
-  for (let i = 0; i < minLen; i++) {
-    const tAa1 = AA3_TO_1[tempCaResidues[i].resName] || 'X';
-    if (tAa1 === candidateSeq[i]) matches++;
-  }
-  const seqIdentity = minLen > 0 ? matches / minLen : 0;
-
-  // If sequence identity is very low (< 0.25), generate an unrelated fold
-  if (seqIdentity < 0.25 || tempCaResidues.length === 0) {
+  // If no template residues exist, generate an alpha helix
+  if (tempCaResidues.length === 0) {
     return generateAlphaHelixPdbDirect(candidateSeq, candChain);
   }
 

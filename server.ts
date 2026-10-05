@@ -886,7 +886,30 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         if (!seqVal.isValid) {
           return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
         }
-        const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+        let esmSuccess = false;
+        let pdbText = '';
+        try {
+          const esmRes = await fetchWithTimeout(
+            'https://api.esmatlas.com/v1/predict/',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain' },
+              body: seqVal.sequence,
+            },
+            15000
+          );
+          if (esmRes.ok) {
+            pdbText = await esmRes.text();
+            if (pdbText.includes('ATOM  ')) esmSuccess = true;
+          }
+        } catch (esmErr) {
+          console.warn('ESMFold prediction failed for candidate PDB fallback:', esmErr);
+        }
+        if (!esmSuccess) {
+          return res.status(400).json({
+            error: 'ESMFold 예측 서버가 응답하지 않거나 구조 예측에 실패했습니다. 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.',
+          });
+        }
         candStructure = parsePdb(pdbText);
         isCandExperimental = false;
       }
@@ -896,10 +919,33 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       if (!seqVal.isValid) {
         return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
       }
-      const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+      let esmSuccess = false;
+      let pdbText = '';
+      try {
+        const esmRes = await fetchWithTimeout(
+          'https://api.esmatlas.com/v1/predict/',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: seqVal.sequence,
+          },
+          15000
+        );
+        if (esmRes.ok) {
+          pdbText = await esmRes.text();
+          if (pdbText.includes('ATOM  ')) esmSuccess = true;
+        }
+      } catch (esmErr) {
+        console.warn('ESMFold prediction failed for sequence candidate:', esmErr);
+      }
+      if (!esmSuccess) {
+        return res.status(400).json({
+          error: 'ESMFold 예측 서버가 응답하지 않거나 구조 예측에 실패했습니다. 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.',
+        });
+      }
       candStructure = parsePdb(pdbText);
       isCandExperimental = false;
-      candChain = 'A';
+      candChain = candStructure.chains[0] || 'A';
     }
 
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
@@ -1146,7 +1192,30 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             if (!seqVal.isValid) {
               throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
             }
-            const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+            let esmSuccess = false;
+            let pdbText = '';
+            try {
+              const esmRes = await fetchWithTimeout(
+                'https://api.esmatlas.com/v1/predict/',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain' },
+                  body: seqVal.sequence,
+                },
+                15000
+              );
+              if (esmRes.ok) {
+                pdbText = await esmRes.text();
+                if (pdbText.includes('ATOM  ')) esmSuccess = true;
+              }
+            } catch (esmErr) {
+              console.warn(`ESMFold prediction failed for candidate '${candName}':`, esmErr);
+            }
+            if (!esmSuccess) {
+              throw new Error(
+                `후보 '${candName}': ESMFold 예측 서버가 응답하지 않거나 구조 예측에 실패했습니다. 외부에서 예측한 PDB를 직접 업로드해 주세요.`
+              );
+            }
             candStructure = parsePdb(pdbText);
             isCandExperimental = false;
           }
@@ -1155,10 +1224,33 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           if (!seqVal.isValid) {
             throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
           }
-          const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+          let esmSuccess = false;
+          let pdbText = '';
+          try {
+            const esmRes = await fetchWithTimeout(
+              'https://api.esmatlas.com/v1/predict/',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: seqVal.sequence,
+              },
+              15000
+            );
+            if (esmRes.ok) {
+              pdbText = await esmRes.text();
+              if (pdbText.includes('ATOM  ')) esmSuccess = true;
+            }
+          } catch (esmErr) {
+            console.warn(`ESMFold prediction failed for candidate '${candName}':`, esmErr);
+          }
+          if (!esmSuccess) {
+            throw new Error(
+              `후보 '${candName}': ESMFold 예측 서버가 응답하지 않거나 구조 예측에 실패했습니다. 외부에서 예측한 PDB를 직접 업로드해 주세요.`
+            );
+          }
           candStructure = parsePdb(pdbText);
           isCandExperimental = false;
-          candChain = 'A';
+          candChain = candStructure.chains[0] || 'A';
         }
 
         const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
