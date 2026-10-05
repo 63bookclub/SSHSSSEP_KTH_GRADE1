@@ -173,11 +173,35 @@ export function parsePdb(pdbText: string): ParsedStructure {
       const iCode = line.length >= 27 ? line.substring(26, 27).trim() : '';
       const resKey = getResidueKey(resSeq, iCode);
 
-      const x = parseFloat(line.substring(30, 38).trim());
-      const y = parseFloat(line.substring(38, 46).trim());
-      const z = parseFloat(line.substring(46, 54).trim());
-      const occupancy = parseFloat(line.substring(54, 60).trim()) || 1.0;
-      const tempFactor = parseFloat(line.substring(60, 66).trim()) || 0.0;
+      let x = parseFloat(line.substring(30, 38).trim());
+      let y = parseFloat(line.substring(38, 46).trim());
+      let z = parseFloat(line.substring(46, 54).trim());
+      let occupancy = parseFloat(line.substring(54, 60).trim());
+      let tempFactor = parseFloat(line.substring(60, 66).trim());
+
+      if (isNaN(x) || isNaN(y) || isNaN(z)) {
+        const tokens = line.trim().split(/\s+/);
+        if (tokens.length >= 7) {
+          x = parseFloat(tokens[6]);
+          y = parseFloat(tokens[7]);
+          z = parseFloat(tokens[8]);
+          occupancy = tokens.length >= 10 ? parseFloat(tokens[9]) : 1.0;
+          tempFactor = tokens.length >= 11 ? parseFloat(tokens[10]) : 0.0;
+        }
+      } else {
+        if (isNaN(occupancy)) occupancy = 1.0;
+        if (isNaN(tempFactor) || tempFactor < 10.0) {
+          const tokens = line.trim().split(/\s+/);
+          if (tokens.length >= 11) {
+            const tokenTF = parseFloat(tokens[10]);
+            if (!isNaN(tokenTF) && tokenTF > 0) {
+              tempFactor = tokenTF;
+            }
+          }
+          if (isNaN(tempFactor)) tempFactor = 0.0;
+        }
+      }
+
       const element = line.substring(76, 78).trim().toUpperCase() || name.substring(0, 1);
 
       if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
@@ -1272,7 +1296,8 @@ export function evaluateAntigenicMimicry(
     const rsaT = targetRes.rsa ?? 0.0;
     const candRes = pair ? candMap.get(pair.candResKey) : null;
     const rsaC = candRes?.rsa ?? 0.0;
-    const plddtVal = pair ? (pair.plddt || 80.0) : 0.0;
+    // Handle missing pLDDT realistically: if unmeasured/0 in predicted model, default to 50.0 rather than 80.0
+    const plddtVal = pair ? (pair.plddt > 0 ? pair.plddt : 50.0) : 0.0;
 
     // Similarity score per residue: 1 / (1 + (d / 3.0)^2)
     const sim = pair ? 1 / (1 + (dist / 3.0) ** 2) : 0.0;
@@ -1561,12 +1586,12 @@ export function threadSequenceOnTemplate(
       const tAa1 = AA3_TO_1[tempRes.resName] || 'X';
       isMutated = tAa1 !== aa1;
 
-      // Realistic conformational perturbation
-      const noise = isMutated ? 0.4 : 0.02;
-      const nx = (Math.random() - 0.5) * 2 * noise;
-      const ny = (Math.random() - 0.5) * 2 * noise;
-      const nz = (Math.random() - 0.5) * 2 * noise;
-      const plddt = isMutated ? 78.5 + Math.random() * 8 : 94.0 + Math.random() * 5;
+      // Deterministic conformational perturbation & pLDDT calculation (no random numbers)
+      const nx = isMutated ? (i % 3 === 0 ? 0.2 : i % 3 === 1 ? -0.15 : 0.1) : 0.0;
+      const ny = isMutated ? (i % 2 === 0 ? -0.2 : 0.15) : 0.0;
+      const nz = isMutated ? (i % 4 === 0 ? 0.15 : -0.1) : 0.0;
+      const baseTemp = tempRes.caAtom?.tempFactor && tempRes.caAtom.tempFactor > 0 ? tempRes.caAtom.tempFactor : 92.0;
+      const plddt = isMutated ? Math.max(50.0, Math.min(85.0, baseTemp - 12.0)) : Math.min(99.0, baseTemp);
       const bStr = plddt.toFixed(2).padStart(6);
 
       const nAtom = tempRes.atoms.find((a) => a.name === 'N');
@@ -1614,11 +1639,13 @@ export function threadSequenceOnTemplate(
         serial++;
       }
     } else {
-      // Loop extension beyond template length
+      // Loop extension beyond template length with deterministic decreasing confidence
       const lastRes = tempCaResidues[tempCaResidues.length - 1];
       const lastCa = lastRes.caAtom!;
-      const offset = (i - tempCaResidues.length + 1) * 3.8;
-      const bStr = (70.0).toFixed(2).padStart(6);
+      const extensionIndex = i - tempCaResidues.length + 1;
+      const offset = extensionIndex * 3.8;
+      const loopPlddt = Math.max(40.0, 70.0 - extensionIndex * 3.0);
+      const bStr = loopPlddt.toFixed(2).padStart(6);
 
       const nX = (lastCa.x + offset - 1.2).toFixed(3).padStart(8);
       const caX = (lastCa.x + offset).toFixed(3).padStart(8);

@@ -150,6 +150,25 @@ END
       '서열 동일성이'
     );
   });
+
+  it('should produce deterministic pLDDT values without random fluctuations', () => {
+    const targetPdb = `
+ATOM      1  CA  ARG A 100     0.000   0.000   0.000  1.00 90.00           C
+ATOM      2  CA  HIS A 101     3.800   0.000   0.000  1.00 90.00           C
+ATOM      3  CA  ASP A 102     7.600   0.000   0.000  1.00 90.00           C
+ATOM      4  CA  GLY A 103    11.400   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+    const parsed = parsePdb(targetPdb);
+    const templateResidues = parsed.residuesByChain['A'];
+
+    const threaded1 = threadSequenceOnTemplate('RHDG', templateResidues, 'A');
+    const threaded2 = threadSequenceOnTemplate('RHDG', templateResidues, 'A');
+
+    // Deterministic output must be identical across multiple runs
+    expect(threaded1).toBe(threaded2);
+  });
 });
 
 describe('SIFTS & Sequence Alignment Residue Mapping', () => {
