@@ -182,20 +182,9 @@ app.post('/api/v1/targets', async (req, res) => {
         if (!fileRes.ok) throw new Error('AlphaFold 구조 파일 다운로드 실패');
         structureText = await fileRes.text();
       } catch (afErr: any) {
-        // Fallback for demo/offline: if 6M0J / P0DTC2 or known benchmark
-        if (identifier === 'P0DTC2' || identifier.includes('RBD')) {
-          structureText = generateAlphaHelixPdb(
-            PRESET_BENCHMARKS[0].candidate.sequence,
-            'E',
-            333,
-            [0, 0, 0],
-            95.0
-          );
-        } else {
-          return res.status(400).json({
-            error: `AlphaFold DB 조회 오류: ${afErr?.message || '구조를 불러올 수 없습니다.'}. PDB ID를 입력하거나 구조 파일을 업로드해 보세요.`,
-          });
-        }
+        return res.status(400).json({
+          error: `AlphaFold DB 조회 오류: ${afErr?.message || '구조를 불러올 수 없습니다.'}. PDB ID를 입력하거나 구조 파일을 업로드해 보세요.`,
+        });
       }
     } else if (pdb_id) {
       if (!isValidPdbId(pdb_id)) {
@@ -219,21 +208,9 @@ app.post('/api/v1/targets', async (req, res) => {
           }
         }
       } catch (rcsbErr: any) {
-        // If known preset, load preset backbone
-        const preset = PRESET_BENCHMARKS.find(p => p.target.identifier === identifier);
-        if (preset) {
-          structureText = generateAlphaHelixPdb(
-            preset.candidate.sequence,
-            preset.target.chain,
-            1,
-            [0, 0, 0],
-            92.0
-          );
-        } else {
-          return res.status(400).json({
-            error: `RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}. 네트워크 상태를 확인하거나 PDB 파일을 직접 업로드해 주세요.`,
-          });
-        }
+        return res.status(400).json({
+          error: `RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}. 네트워크 상태를 확인하거나 PDB 파일을 직접 업로드해 보세요.`,
+        });
       }
     } else if (raw_content) {
       sourceType = 'file';
@@ -725,12 +702,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
         }
       } catch (err: any) {
-        const preset = PRESET_BENCHMARKS.find(p => p.target.identifier === targetIdentifier);
-        if (preset) {
-          targetPdbText = generateAlphaHelixPdb(preset.candidate.sequence, preset.target.chain, 1, [0, 0, 0], 92.0);
-        } else {
-          return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다. (${err.message})` });
-        }
+        return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다. (${err.message})` });
       }
     } else if (isValidUniprotId(cleanTarget)) {
       // UniProt ID
@@ -752,7 +724,14 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       const seqOnly = seqVal.sequence;
       targetIdentifier = 'Target_Sequence';
       targetSourceType = 'file';
-      targetPdbText = generateAlphaHelixPdb(seqOnly, 'A', 1, [0, 0, 0], 90.0);
+      const esmResult = await predictStructureWithESMFold(seqOnly);
+      if (esmResult.success && esmResult.pdbText) {
+        targetPdbText = esmResult.pdbText;
+      } else {
+        return res.status(400).json({
+          error: `타겟 서열 ESMFold 예측 실패: ${esmResult.error || '구조 예측에 실패했습니다.'} PDB ID, UniProt ID, 또는 PDB 구조 파일을 입력해 주세요.`,
+        });
+      }
     }
 
     const targetStructure = targetPdbText.includes('_atom_site.')
@@ -1026,25 +1005,87 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
     // 1. Resolve Target
     let cleanTarget = target_input.trim();
-    let targetStructure: ParsedStructure;
+    if (cleanTarget.startsWith('>')) {
+      const records = parseFastaInput(cleanTarget);
+      if (records.length > 1) {
+        return res.status(400).json({
+          error: '타겟 FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
+        });
+      }
+      cleanTarget = records[0]?.sequence || '';
+    }
+
+    let targetStructure!: ParsedStructure;
+    let targetSourceType: 'pdb' | 'uniprot' | 'file' = 'file';
 
     if (cleanTarget.startsWith('ATOM') || cleanTarget.startsWith('HEADER') || cleanTarget.includes('_atom_site.')) {
       targetStructure = cleanTarget.includes('_atom_site.') ? parseMmcif(cleanTarget) : parsePdb(cleanTarget);
-    } else if (/^[0-9][a-zA-Z0-9]{3}$/i.test(cleanTarget)) {
+      targetSourceType = 'file';
+    } else if (isValidPdbId(cleanTarget)) {
       const pdbId = cleanTarget.toUpperCase();
+      targetSourceType = 'pdb';
       try {
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.pdb`);
-        const txt = await r.text();
-        targetStructure = parsePdb(txt);
-      } catch (_) {
-        const p = PRESET_BENCHMARKS.find(b => b.target.identifier === pdbId) || PRESET_BENCHMARKS[0];
-        const alphaPdb = generateAlphaHelixPdb(p.candidate.sequence, 'E', 333, [0, 0, 0], 95.0);
-        targetStructure = parsePdb(alphaPdb);
+        if (r.ok) {
+          const txt = await r.text();
+          targetStructure = parsePdb(txt);
+        } else {
+          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            targetStructure = parseMmcif(txt);
+          } else {
+            return res.status(400).json({ error: `RCSB PDB에서 ${pdbId}를 찾을 수 없습니다.` });
+          }
+        }
+      } catch (err: any) {
+        return res.status(400).json({ error: `RCSB PDB에서 ${pdbId}를 가져오는 중 오류가 발생했습니다: ${err.message}` });
+      }
+    } else if (isValidUniprotId(cleanTarget)) {
+      const uniprotId = cleanTarget.toUpperCase();
+      targetSourceType = 'uniprot';
+      try {
+        const afRes = await fetchWithTimeout(`https://alphafold.ebi.ac.uk/api/prediction/${uniprotId}`);
+        if (!afRes.ok) {
+          return res.status(400).json({ error: `AlphaFold DB에서 UniProt ID '${uniprotId}'를 찾을 수 없습니다.` });
+        }
+        const meta = await afRes.json();
+        const pdbUrl = meta[0]?.pdbUrl || meta[0]?.cifUrl;
+        if (!pdbUrl) {
+          return res.status(400).json({ error: `AlphaFold DB에서 UniProt ID '${uniprotId}'의 3D 구조 URL을 찾을 수 없습니다.` });
+        }
+        const structRes = await fetchWithTimeout(pdbUrl);
+        if (!structRes.ok) {
+          return res.status(400).json({ error: `AlphaFold DB에서 UniProt ID '${uniprotId}'의 구조 파일 다운로드에 실패했습니다.` });
+        }
+        const structText = await structRes.text();
+        targetStructure = structText.includes('_atom_site.') ? parseMmcif(structText) : parsePdb(structText);
+      } catch (err: any) {
+        return res.status(400).json({ error: `AlphaFold DB 조회 중 오류가 발생했습니다: ${err.message}` });
       }
     } else {
-      const p = PRESET_BENCHMARKS[0];
-      const alphaPdb = generateAlphaHelixPdb(p.candidate.sequence, 'E', 333, [0, 0, 0], 95.0);
-      targetStructure = parsePdb(alphaPdb);
+      const seqVal = validateAminoAcidSequence(cleanTarget, { minLen: 10, maxLen: 2000 });
+      if (seqVal.isValid) {
+        targetSourceType = 'file';
+        const esmResult = await predictStructureWithESMFold(seqVal.sequence);
+        if (esmResult.success && esmResult.parsedStructure) {
+          targetStructure = esmResult.parsedStructure;
+        } else if (esmResult.success && esmResult.pdbText) {
+          targetStructure = parsePdb(esmResult.pdbText);
+        } else {
+          return res.status(400).json({
+            error: `타겟 서열 ESMFold 예측 실패: ${esmResult.error || '구조 예측 실패'}. PDB ID, UniProt ID, 또는 PDB 구조 파일을 입력해 주세요.`,
+          });
+        }
+      } else {
+        return res.status(400).json({
+          error: `유효하지 않거나 지원하지 않는 타겟 입력입니다. (${seqVal.error || 'PDB ID, UniProt ID, PDB 구조 텍스트 또는 아미노산 서열을 입력해 주세요.'})`,
+        });
+      }
+    }
+
+    if (!targetStructure || targetStructure.chains.length === 0 || targetStructure.allAtoms.length === 0) {
+      return res.status(400).json({ error: '유효한 타겟 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다.' });
     }
 
     const targetChain = reqTargetChain?.trim() || targetStructure.chains[0] || 'A';
@@ -1061,7 +1102,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
     targetsStore.set(targetId, {
       id: targetId,
       identifier: 'Batch_Target',
-      sourceType: 'pdb',
+      sourceType: targetSourceType,
       structure: targetStructure,
       chains: targetStructure.chains,
       chainResidueCounts,
