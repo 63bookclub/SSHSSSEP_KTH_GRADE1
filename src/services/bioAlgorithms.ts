@@ -1523,18 +1523,26 @@ export function threadSequenceOnTemplate(
   let serial = 1;
   const tempCaResidues = templateResidues.filter(r => r.caAtom !== null);
 
-  // Compute sequence identity to template
+  if (tempCaResidues.length === 0) {
+    throw new Error('Template residues list is empty. Cannot thread sequence.');
+  }
+
+  // Compute sequence identity to template using positional comparison and alignment
   let matches = 0;
   const minLen = Math.min(candidateSeq.length, tempCaResidues.length);
   for (let i = 0; i < minLen; i++) {
     const tAa1 = AA3_TO_1[tempCaResidues[i].resName] || 'X';
     if (tAa1 === candidateSeq[i]) matches++;
   }
-  const seqIdentity = minLen > 0 ? matches / minLen : 0;
 
-  // If sequence identity is very low (< 0.25), generate an unrelated fold
-  if (seqIdentity < 0.25 || tempCaResidues.length === 0) {
-    return generateAlphaHelixPdbDirect(candidateSeq, candChain);
+  const denom = Math.max(candidateSeq.length, tempCaResidues.length);
+  const seqIdentity = denom > 0 ? matches / denom : 0;
+
+  // If sequence identity is low (< 0.25), fail explicitly instead of generating fake structures
+  if (seqIdentity < 0.25) {
+    throw new Error(
+      `서열 동일성이 ${ (seqIdentity * 100).toFixed(1) }%로 기준치(25%) 미만입니다. 모사 구조 생성이 거부되었습니다.`
+    );
   }
 
   for (let i = 0; i < candidateSeq.length; i++) {
