@@ -18,6 +18,7 @@ import {
   getResidueKey,
 } from './src/services/bioAlgorithms.ts';
 import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
+import { predictStructureWithESMFold } from './src/services/esmFoldService.ts';
 import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
 import {
@@ -456,33 +457,14 @@ app.post('/api/v1/candidates', async (req, res) => {
       }
       parsedSeq = seqVal.sequence;
 
-      // Try ESMFold API prediction
-      let esmSuccess = false;
-      try {
-        const esmUrl = 'https://api.esmatlas.com/v1/predict/';
-        const esmRes = await fetchWithTimeout(
-          esmUrl,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: parsedSeq,
-          },
-          15000
-        );
-
-        if (esmRes.ok) {
-          structureText = await esmRes.text();
-          if (structureText.includes('ATOM  ')) {
-            esmSuccess = true;
-          }
-        }
-      } catch (esmErr) {
-        console.warn('ESMFold API prediction failed or timed out:', esmErr);
-      }
-
-      if (!esmSuccess) {
+      // Use modular ESMFold service
+      const esmResult = await predictStructureWithESMFold(rawInput);
+      if (esmResult.success && esmResult.pdbText) {
+        structureText = esmResult.pdbText;
+        parsedSeq = esmResult.sequence || parsedSeq;
+      } else {
         return res.status(400).json({
-          error: 'ESMFold 예측 서버가 응답하지 않거나 구조 예측에 실패했습니다. 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.',
+          error: `ESMFold 예측 실패: ${esmResult.error || '구조 예측에 실패했습니다.'} 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.`,
         });
       }
     }
@@ -890,10 +872,29 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         });
       }
     } else {
-      // Candidate is amino acid sequence
-      return res.status(400).json({
-        error: '후보 물질의 서열만으로는 분석할 수 없습니다. 3D 구조(PDB 파일 또는 PDB ID)를 제공해 주세요.',
-      });
+      // Candidate is amino acid sequence: call ESMFold
+      const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 600 });
+      if (!seqVal.isValid) {
+        return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
+      }
+      const esmResult = await predictStructureWithESMFold(cleanCandidate);
+      if (esmResult.success && esmResult.parsedStructure) {
+        candStructure = esmResult.parsedStructure;
+        isCandExperimental = false;
+        candChain = candStructure.chains[0] || 'A';
+      } else {
+        // Fallback: thread sequence on target template if compatible
+        try {
+          const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+          candStructure = parsePdb(threadedPdb);
+          isCandExperimental = false;
+          candChain = candStructure.chains[0] || 'A';
+        } catch (threadErr: any) {
+          return res.status(400).json({
+            error: `ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}). 유효한 3D PDB 파일이나 PDB ID를 업로드해 주세요.`,
+          });
+        }
+      }
     }
 
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
@@ -1142,7 +1143,27 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             throw new Error(`후보 '${candName}' PDB '${pId}'를 불러오지 못했습니다: ${err.message || err}`);
           }
         } else {
-          throw new Error(`후보 '${candName}'는 서열만 입력되었습니다. 3D 구조(PDB 파일 또는 PDB ID)를 제공해 주세요.`);
+          // Candidate is amino acid sequence: call ESMFold
+          const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 600 });
+          if (!seqVal.isValid) {
+            throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
+          }
+          const esmResult = await predictStructureWithESMFold(cleanCand);
+          if (esmResult.success && esmResult.parsedStructure) {
+            candStructure = esmResult.parsedStructure;
+            isCandExperimental = false;
+            candChain = candStructure.chains[0] || 'A';
+          } else {
+            // Fallback: thread sequence on target template
+            try {
+              const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
+              candStructure = parsePdb(threadedPdb);
+              isCandExperimental = false;
+              candChain = candStructure.chains[0] || 'A';
+            } catch (threadErr: any) {
+              throw new Error(`후보 '${candName}' ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}).`);
+            }
+          }
         }
 
         const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];

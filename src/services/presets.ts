@@ -26,10 +26,10 @@ export function generateAlphaHelixPdb(
     const x = startCoord[0] + radius * Math.cos(theta);
     const y = startCoord[1] + radius * Math.sin(theta);
 
-    // Apply gaussian-like noise if requested
-    const nx = noise > 0 ? (Math.random() - 0.5) * 2 * noise : 0;
-    const ny = noise > 0 ? (Math.random() - 0.5) * 2 * noise : 0;
-    const nz = noise > 0 ? (Math.random() - 0.5) * 2 * noise : 0;
+    // Apply deterministic noise if requested (no random numbers)
+    const nx = noise > 0 ? Math.sin(i * 0.7) * noise : 0;
+    const ny = noise > 0 ? Math.cos(i * 0.7) * noise : 0;
+    const nz = noise > 0 ? Math.sin(i * 1.3) * noise : 0;
 
     const res3 = get3Letter(aa1);
     const caX = (x + nx).toFixed(3).padStart(8);
