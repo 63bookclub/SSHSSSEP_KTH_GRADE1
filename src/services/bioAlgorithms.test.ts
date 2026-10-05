@@ -10,6 +10,7 @@ import {
   calculateSASA,
   parseFastaInput,
   computeKabsch,
+  threadSequenceOnTemplate,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
 
@@ -127,6 +128,27 @@ ATOM 4 CA CA . LYS A 50 A 4.0 2.0 3.0 1.00 80.00
     expect(chainA[0].resName).toBe('VAL');
     expect(chainA[1].resKey).toBe('50A');
     expect(chainA[1].resName).toBe('LYS');
+  });
+});
+
+describe('threadSequenceOnTemplate Unit Tests', () => {
+  it('should throw an error when sequence identity is below 25%', () => {
+    const targetPdb = `
+ATOM      1  CA  ARG A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  HIS A 101     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  ASP A 102     7.600   0.000   0.000  1.00 80.00           C
+ATOM      4  CA  GLY A 103    11.400   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+    const parsed = parsePdb(targetPdb);
+    const templateResidues = parsed.residuesByChain['A'];
+
+    // candidate with 0% sequence identity to RHDG
+    const candidateSeq = 'WWWW';
+    expect(() => threadSequenceOnTemplate(candidateSeq, templateResidues, 'A')).toThrow(
+      '서열 동일성이'
+    );
   });
 });
 

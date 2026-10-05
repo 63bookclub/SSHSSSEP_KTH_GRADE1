@@ -877,29 +877,23 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       const candId = cleanCandidate.toUpperCase();
       try {
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
+        if (!r.ok) {
+          throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
+        }
         const txt = await r.text();
         candStructure = parsePdb(txt);
         isCandExperimental = true;
         candChain = candStructure.chains[0] || 'A';
-      } catch (_) {
-        const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 2000 });
-        if (!seqVal.isValid) {
-          return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
-        }
-        const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-        candStructure = parsePdb(pdbText);
-        isCandExperimental = false;
+      } catch (err: any) {
+        return res.status(400).json({
+          error: `후보 PDB '${candId}'를 불러오지 못했습니다: ${err.message || err}`,
+        });
       }
     } else {
       // Candidate is amino acid sequence
-      const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 2000 });
-      if (!seqVal.isValid) {
-        return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
-      }
-      const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-      candStructure = parsePdb(pdbText);
-      isCandExperimental = false;
-      candChain = 'A';
+      return res.status(400).json({
+        error: '후보 물질의 서열만으로는 분석할 수 없습니다. 3D 구조(PDB 파일 또는 PDB ID)를 제공해 주세요.',
+      });
     }
 
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
@@ -1137,28 +1131,18 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           const pId = cleanCand.toUpperCase();
           try {
             const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
+            if (!r.ok) {
+              throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
+            }
             const txt = await r.text();
             candStructure = parsePdb(txt);
             isCandExperimental = true;
             candChain = candStructure.chains[0] || 'A';
-          } catch (_) {
-            const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 2000 });
-            if (!seqVal.isValid) {
-              throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
-            }
-            const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-            candStructure = parsePdb(pdbText);
-            isCandExperimental = false;
+          } catch (err: any) {
+            throw new Error(`후보 '${candName}' PDB '${pId}'를 불러오지 못했습니다: ${err.message || err}`);
           }
         } else {
-          const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 2000 });
-          if (!seqVal.isValid) {
-            throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
-          }
-          const pdbText = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-          candStructure = parsePdb(pdbText);
-          isCandExperimental = false;
-          candChain = 'A';
+          throw new Error(`후보 '${candName}'는 서열만 입력되었습니다. 3D 구조(PDB 파일 또는 PDB ID)를 제공해 주세요.`);
         }
 
         const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
