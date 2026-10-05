@@ -247,9 +247,23 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
           )}
 
           {error && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <span>{error}</span>
+            <div className="p-4 rounded-xl bg-rose-950/50 border border-rose-500/50 text-rose-200 text-xs flex items-start justify-between gap-3 shadow-lg">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-400" />
+                <div className="space-y-1">
+                  <p className="font-bold text-rose-100">구조 예측/처리 오류</p>
+                  <p className="leading-relaxed">{error}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setInputType('file');
+                  setError(null);
+                }}
+                className="shrink-0 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs rounded-lg transition"
+              >
+                PDB 직접 업로드로 이동
+              </button>
             </div>
           )}
         </div>
