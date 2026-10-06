@@ -307,6 +307,15 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
         {/* Resolved Epitope Summary */}
         {epitopeResult && (
           <div className="mt-5 pt-4 border-t border-slate-800">
+            {epitopeResult.warning && (
+              <div className="mb-3 p-3 rounded-xl bg-amber-950/60 border border-amber-500/60 text-amber-200 text-xs flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                <div>
+                  <strong className="block font-bold">에피톱 대체 경고:</strong>
+                  <span>{epitopeResult.warning}</span>
+                </div>
+              </div>
+            )}
             <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center space-x-2">

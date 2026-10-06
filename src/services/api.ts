@@ -39,6 +39,8 @@ export interface EpitopeResponse {
   is_temporary: boolean;
   residues_count: number;
   residues: (number | string)[];
+  fallback_reason?: string;
+  warning?: string;
   note: string;
 }
 
@@ -81,6 +83,7 @@ export interface JobResultData {
       is_experimental_candidate?: boolean;
       candidate_source?: 'experimental' | 'alphafold' | 'esmfold' | 'simulated';
       is_simulated?: boolean;
+      epitope_warning?: string;
     };
     alignment: {
       tm_score_target_norm: number;

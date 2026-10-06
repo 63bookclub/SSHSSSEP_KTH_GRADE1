@@ -249,6 +249,21 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
       )}
 
+      {/* Temporary Epitope Warning Banner if fallback was triggered */}
+      {(result.auto_settings.is_temporary_epitope || result.auto_settings.epitope_warning) && (
+        <div className="p-4 rounded-2xl bg-amber-950/80 border-2 border-amber-500/80 shadow-lg text-amber-100 flex items-start space-x-3.5">
+          <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs leading-relaxed">
+            <strong className="text-amber-200 font-bold text-sm block mb-1">
+              ⚠️ 알림: 에피톱 입력 대체 및 임시 모드 적용
+            </strong>
+            {result.auto_settings.epitope_warning ||
+              '요청하신 에피톱 영역을 찾을 수 없거나 결과가 비어 있어 "표면 노출 잔기 임시 에피톱(RSA ≥ 0.20)" 모드로 자동 전환되었습니다.'}
+            {' '}임시 에피톱 모드는 표면 노출도를 기반으로 에피톱을 자동 추정하므로 실제 실험 검증된 중화 에피톱 범위와 차이가 있을 수 있습니다.
+          </div>
+        </div>
+      )}
+
       {/* 1. Mandatory Top Disclaimer Banner */}
       <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 shadow-lg text-amber-200 flex items-start space-x-3.5">
         <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -656,7 +671,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
-          <span>인용 제안: US-align (Zhang et al.), TM-score, Shrake-Rupley Numerical SASA Integration.</span>
+          <span>인용 제안: TM-score 근사 구현 (Zhang & Skolnick formula), Shrake-Rupley Numerical SASA Integration.</span>
           <span className="font-mono">엔진: SSBD-Engine v1.0.0</span>
         </div>
       </div>
