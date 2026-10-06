@@ -795,116 +795,169 @@ export function alignStructures(
     throw new Error('Both structures must have at least one C-alpha atom');
   }
 
-  // TM-score d0 scale
-  const d0_target = L_target > 15 ? 1.24 * Math.cbrt(L_target - 15) - 1.8 : 0.5;
-  const d0_cand = L_cand > 15 ? 1.24 * Math.cbrt(L_cand - 15) - 1.8 : 0.5;
+  // TM-score d0 scale (Zhang & Skolnick standard formula)
+  const d0_target = Math.max(0.5, L_target > 15 ? 1.24 * Math.cbrt(L_target - 15) - 1.8 : 0.5);
+  const d0_cand = Math.max(0.5, L_cand > 15 ? 1.24 * Math.cbrt(L_cand - 15) - 1.8 : 0.5);
 
-  // Initial sequence or structural correspondence using Needleman-Wunsch with BLOSUM/identity/distance
-  // Pairwise similarity matrix
-  const dp: number[][] = Array(L_target + 1)
-    .fill(0)
-    .map(() => Array(L_cand + 1).fill(0));
-  const pointer: number[][] = Array(L_target + 1)
-    .fill(0)
-    .map(() => Array(L_cand + 1).fill(0)); // 1: diag, 2: up, 3: left
+  // Structural dynamic programming alignment function using spatial distance score
+  const alignByDistanceScore = (
+    R: number[][],
+    t: number[]
+  ): { pairs: [number, number][]; scoreSum: number } => {
+    const dp: number[][] = Array(L_target + 1)
+      .fill(0)
+      .map(() => Array(L_cand + 1).fill(0));
+    const pointer: number[][] = Array(L_target + 1)
+      .fill(0)
+      .map(() => Array(L_cand + 1).fill(0)); // 1: diag, 2: up, 3: left
 
-  const gapPenalty = -1.0;
-  for (let i = 0; i <= L_target; i++) dp[i][0] = i * gapPenalty;
-  for (let j = 0; j <= L_cand; j++) dp[0][j] = j * gapPenalty;
+    const gapPenalty = 0.0; // TM-align score matrix uses non-negative scores without gap penalties
 
-  for (let i = 1; i <= L_target; i++) {
-    for (let j = 1; j <= L_cand; j++) {
-      const matchScore = targetCa[i - 1].resName === candCa[j - 1].resName ? 2.5 : -0.5;
-      const scoreDiag = dp[i - 1][j - 1] + matchScore;
-      const scoreUp = dp[i - 1][j] + gapPenalty;
-      const scoreLeft = dp[i][j - 1] + gapPenalty;
+    for (let i = 1; i <= L_target; i++) {
+      const tc = targetCa[i - 1].caAtom!;
+      for (let j = 1; j <= L_cand; j++) {
+        const cc = candCa[j - 1].caAtom!;
+        const rotX = R[0][0] * cc.x + R[0][1] * cc.y + R[0][2] * cc.z + t[0];
+        const rotY = R[1][0] * cc.x + R[1][1] * cc.y + R[1][2] * cc.z + t[1];
+        const rotZ = R[2][0] * cc.x + R[2][1] * cc.y + R[2][2] * cc.z + t[2];
+        const dist = Math.sqrt((rotX - tc.x) ** 2 + (rotY - tc.y) ** 2 + (rotZ - tc.z) ** 2);
 
-      let maxVal = scoreDiag;
-      let dir = 1;
-      if (scoreUp > maxVal) {
-        maxVal = scoreUp;
-        dir = 2;
+        const matchScore = 1 / (1 + (dist / d0_target) ** 2);
+        const scoreDiag = dp[i - 1][j - 1] + matchScore;
+        const scoreUp = dp[i - 1][j] - gapPenalty;
+        const scoreLeft = dp[i][j - 1] - gapPenalty;
+
+        let maxVal = scoreDiag;
+        let dir = 1;
+        if (scoreUp > maxVal) {
+          maxVal = scoreUp;
+          dir = 2;
+        }
+        if (scoreLeft > maxVal) {
+          maxVal = scoreLeft;
+          dir = 3;
+        }
+        dp[i][j] = Math.max(0, maxVal);
+        pointer[i][j] = dir;
       }
-      if (scoreLeft > maxVal) {
-        maxVal = scoreLeft;
-        dir = 3;
+    }
+
+    // Traceback
+    let currI = L_target;
+    let currJ = L_cand;
+    const pairs: [number, number][] = [];
+    while (currI > 0 && currJ > 0) {
+      if (pointer[currI][currJ] === 1) {
+        pairs.push([currI - 1, currJ - 1]);
+        currI--;
+        currJ--;
+      } else if (pointer[currI][currJ] === 2) {
+        currI--;
+      } else {
+        currJ--;
       }
-      dp[i][j] = maxVal;
-      pointer[i][j] = dir;
+    }
+    pairs.reverse();
+
+    let scoreSum = 0;
+    for (const [ti, ci] of pairs) {
+      const tc = targetCa[ti].caAtom!;
+      const cc = candCa[ci].caAtom!;
+      const rotX = R[0][0] * cc.x + R[0][1] * cc.y + R[0][2] * cc.z + t[0];
+      const rotY = R[1][0] * cc.x + R[1][1] * cc.y + R[1][2] * cc.z + t[1];
+      const rotZ = R[2][0] * cc.x + R[2][1] * cc.y + R[2][2] * cc.z + t[2];
+      const dist = Math.sqrt((rotX - tc.x) ** 2 + (rotY - tc.y) ** 2 + (rotZ - tc.z) ** 2);
+      scoreSum += 1 / (1 + (dist / d0_target) ** 2);
+    }
+
+    return { pairs, scoreSum };
+  };
+
+  // Find best initial superposition seeds via gapless diagonal sliding
+  let bestSeedR = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  let bestSeedT = [0, 0, 0];
+  let bestSeedScore = -1;
+  let bestInitialPairs: [number, number][] = [];
+
+  const minOverlap = Math.min(5, Math.min(L_target, L_cand));
+  for (let shift = -(L_cand - minOverlap); shift <= L_target - minOverlap; shift++) {
+    const diagPairs: [number, number][] = [];
+    for (let ci = 0; ci < L_cand; ci++) {
+      const ti = ci + shift;
+      if (ti >= 0 && ti < L_target) {
+        diagPairs.push([ti, ci]);
+      }
+    }
+
+    if (diagPairs.length < minOverlap) continue;
+
+    const candPts: [number, number, number][] = diagPairs.map(([, ci]) => [
+      candCa[ci].caAtom!.x,
+      candCa[ci].caAtom!.y,
+      candCa[ci].caAtom!.z,
+    ]);
+    const targetPts: [number, number, number][] = diagPairs.map(([ti]) => [
+      targetCa[ti].caAtom!.x,
+      targetCa[ti].caAtom!.y,
+      targetCa[ti].caAtom!.z,
+    ]);
+
+    const { R, t } = computeKabsch(candPts, targetPts);
+    let tmSum = 0;
+    for (const [ti, ci] of diagPairs) {
+      const tc = targetCa[ti].caAtom!;
+      const cc = candCa[ci].caAtom!;
+      const rotX = R[0][0] * cc.x + R[0][1] * cc.y + R[0][2] * cc.z + t[0];
+      const rotY = R[1][0] * cc.x + R[1][1] * cc.y + R[1][2] * cc.z + t[1];
+      const rotZ = R[2][0] * cc.x + R[2][1] * cc.y + R[2][2] * cc.z + t[2];
+      const dist = Math.sqrt((rotX - tc.x) ** 2 + (rotY - tc.y) ** 2 + (rotZ - tc.z) ** 2);
+      tmSum += 1 / (1 + (dist / d0_target) ** 2);
+    }
+
+    if (tmSum > bestSeedScore) {
+      bestSeedScore = tmSum;
+      bestSeedR = R;
+      bestSeedT = t;
+      bestInitialPairs = diagPairs;
     }
   }
 
-  // Traceback
-  let currI = L_target;
-  let currJ = L_cand;
-  const rawPairs: [number, number][] = [];
-  while (currI > 0 && currJ > 0) {
-    if (pointer[currI][currJ] === 1) {
-      rawPairs.push([currI - 1, currJ - 1]);
-      currI--;
-      currJ--;
-    } else if (pointer[currI][currJ] === 2) {
-      currI--;
-    } else {
-      currJ--;
-    }
-  }
-  rawPairs.reverse();
+  // Iterative TM-align DP refinement loop
+  let bestR = bestSeedR;
+  let bestT = bestSeedT;
+  let currentPairs = bestInitialPairs;
+  let maxScoreSum = bestSeedScore;
 
-  // If few matches, fall back to index-based correspondence
-  if (rawPairs.length < 5) {
-    const minLen = Math.min(L_target, L_cand);
-    rawPairs.length = 0;
-    for (let k = 0; k < minLen; k++) {
-      rawPairs.push([k, k]);
-    }
-  }
+  for (let iter = 0; iter < 10; iter++) {
+    const { pairs, scoreSum } = alignByDistanceScore(bestR, bestT);
 
-  // Iterative Kabsch alignment to refine rotation/translation
-  let bestR = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-  let bestT = [0, 0, 0];
-  let activePairs = [...rawPairs];
+    if (pairs.length < 3) break;
 
-  for (let iteration = 0; iteration < 5; iteration++) {
-    const candPts: [number, number, number][] = activePairs.map(([ti, ci]) => {
-      const a = candCa[ci].caAtom!;
-      return [a.x, a.y, a.z];
-    });
-    const targetPts: [number, number, number][] = activePairs.map(([ti, ci]) => {
-      const a = targetCa[ti].caAtom!;
-      return [a.x, a.y, a.z];
-    });
+    const candPts: [number, number, number][] = pairs.map(([, ci]) => [
+      candCa[ci].caAtom!.x,
+      candCa[ci].caAtom!.y,
+      candCa[ci].caAtom!.z,
+    ]);
+    const targetPts: [number, number, number][] = pairs.map(([ti]) => [
+      targetCa[ti].caAtom!.x,
+      targetCa[ti].caAtom!.y,
+      targetCa[ti].caAtom!.z,
+    ]);
 
     const { R, t } = computeKabsch(candPts, targetPts);
     bestR = R;
     bestT = t;
+    currentPairs = pairs;
 
-    // Filter out pairs with distance > 2 * d0 to focus on structurally congruent core
-    const nextPairs: [number, number][] = [];
-    const dCutoff = Math.max(3.8, d0_target * 2.2);
-
-    for (const [ti, ci] of rawPairs) {
-      const tc = targetCa[ti].caAtom!;
-      const cc = candCa[ci].caAtom!;
-
-      const rotX = R[0][0] * cc.x + R[0][1] * cc.y + R[0][2] * cc.z + t[0];
-      const rotY = R[1][0] * cc.x + R[1][1] * cc.y + R[1][2] * cc.z + t[1];
-      const rotZ = R[2][0] * cc.x + R[2][1] * cc.y + R[2][2] * cc.z + t[2];
-
-      const dist = Math.sqrt((rotX - tc.x) ** 2 + (rotY - tc.y) ** 2 + (rotZ - tc.z) ** 2);
-      if (dist <= dCutoff) {
-        nextPairs.push([ti, ci]);
-      }
-    }
-
-    if (nextPairs.length >= 3) {
-      activePairs = nextPairs;
-    } else {
-      break;
+    if (scoreSum > maxScoreSum) {
+      maxScoreSum = scoreSum;
     }
   }
 
-  // Compute final distances and metrics for all paired residues
+  // Compute final aligned pairs and structural metrics
+  const finalAlignment = alignByDistanceScore(bestR, bestT);
+  const rawPairs = finalAlignment.pairs;
+
   const alignedPairs: AlignedPair[] = [];
   let sumTmTarget = 0;
   let sumTmCand = 0;
@@ -922,7 +975,6 @@ export function alignStructures(
 
     const dist = Math.sqrt((rotX - tc.x) ** 2 + (rotY - tc.y) ** 2 + (rotZ - tc.z) ** 2);
 
-    // Only include in aligned statistics if reasonable structural distance
     sumTmTarget += 1 / (1 + (dist / d0_target) ** 2);
     sumTmCand += 1 / (1 + (dist / d0_cand) ** 2);
     sumSqDist += dist * dist;
