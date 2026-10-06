@@ -213,8 +213,42 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.removeChild(link);
   };
 
+  const isSimulatedStructure =
+    result.auto_settings.is_simulated ||
+    result.auto_settings.candidate_source === 'simulated';
+
+  const getCandidateBadgeText = () => {
+    const src = result.auto_settings.candidate_source;
+    if (src === 'simulated' || result.auto_settings.is_simulated) {
+      return '모사 대체 (Simulated Template)';
+    }
+    if (src === 'alphafold') {
+      return 'AlphaFold DB (pLDDT)';
+    }
+    if (src === 'esmfold') {
+      return 'ESMFold 예측 (pLDDT)';
+    }
+    if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
+      return '실험 결정 구조 (PDB)';
+    }
+    return 'ESMFold 예측 (pLDDT)';
+  };
+
   return (
     <div className="space-y-6">
+      {/* 0. Prominent Simulated Structure Warning Banner if applicable */}
+      {isSimulatedStructure && (
+        <div className="p-4 rounded-2xl bg-rose-950/80 border-2 border-rose-500 shadow-2xl text-rose-100 flex items-start space-x-3.5 animate-pulse">
+          <ShieldAlert className="w-6 h-6 text-rose-400 shrink-0 mt-0.5" />
+          <div className="text-xs leading-relaxed">
+            <strong className="text-rose-200 font-extrabold text-sm block mb-1">
+              ⚠️ 경고: 모사 구조 기반, 연구용 사용 불가 (Simulated Model - Not For Research Use)
+            </strong>
+            본 분석 결과는 ESMFold API 응답 부재 시 서열 템플릿 모사(Sequence Threading)로 생성된 대체 구조에 기반합니다. 실제 단백질 3D 좌표 예측이 아니므로 점수를 신뢰할 수 없으며, 학술 논문 및 공식 연구 결과물로 사용할 수 없습니다.
+          </div>
+        </div>
+      )}
+
       {/* 1. Mandatory Top Disclaimer Banner */}
       <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 shadow-lg text-amber-200 flex items-start space-x-3.5">
         <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -264,9 +298,13 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 유형</span>
-            <span className="font-bold text-amber-300">
-              {result.auto_settings.is_experimental_candidate ? '실험 결정 구조 (PDB)' : 'ESM 예측 모델 (pLDDT)'}
+            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
+            <span
+              className={`font-bold ${
+                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
+              }`}
+            >
+              {getCandidateBadgeText()}
             </span>
           </div>
         </div>

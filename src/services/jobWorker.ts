@@ -12,6 +12,8 @@ if (parentPort && workerData) {
       candResidues,
       epitopeResidues,
       isExperimentalCandidate,
+      candidateSource,
+      isSimulated,
       customWeights,
       epitopeMethod,
       targetChain,
@@ -28,6 +30,13 @@ if (parentPort && workerData) {
       epitopeMethod,
       targetChain
     );
+
+    if (candidateSource) {
+      evaluation.autoSettings.candidateSource = candidateSource;
+    }
+    if (typeof isSimulated === 'boolean') {
+      evaluation.autoSettings.isSimulated = isSimulated;
+    }
 
     const alignedPdb = generateSuperimposedPdb(
       candidateStructure,

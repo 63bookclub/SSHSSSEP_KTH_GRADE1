@@ -15,6 +15,19 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
+  const isSimulated =
+    result.auto_settings.is_simulated ||
+    result.auto_settings.candidate_source === 'simulated';
+
+  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
+  if (isSimulated) {
+    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
+  } else if (result.auto_settings.candidate_source === 'alphafold') {
+    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
+  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
+    candidateSourceLabel = '실험 결정 구조 (PDB)';
+  }
+
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
@@ -224,6 +237,17 @@ export function generateReportHtml(
     </div>
   </div>
 
+  ${
+    isSimulated
+      ? `
+  <div style="background-color: #ffe4e6; border: 2px solid #e11d48; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 11px; color: #9f1239; line-height: 1.5;">
+    <strong style="font-size: 12px; color: #e11d48;">⚠️ 경고: 모사 구조 기반, 연구용 사용 불가 (Simulated Model - Not For Research Use)</strong><br />
+    본 분석 결과는 ESMFold API 응답 부재 시 서열 템플릿 모사(Sequence Threading)로 생성된 대체 구조에 기반합니다. 실제 단백질 3D 좌표 예측이 아니므로 점수를 신뢰할 수 없으며, 학술 논문 및 공식 연구 결과물로 사용할 수 없습니다.
+  </div>
+  `
+      : ''
+  }
+
   <div class="disclaimer-box">
     <strong>면책 조항 (Mandatory Scientific Disclaimer):</strong><br />
     "본 결과는 단백질 3차원 좌표 기반의 <em>in silico</em> 구조 중첩 및 에피톱 국소 모방도 수학적 비교 분석 결과이며, 백신의 실제 임상 효능이나 생물학적 안전성을 보증하지 않습니다. 논문 및 보고서 작성 시 '효과 검증'이 아닌 '구조 모방도 기반 항원성 보존 예측'으로 기술해야 합니다."
@@ -270,6 +294,10 @@ export function generateReportHtml(
         <tr>
           <td style="color: #64748b;">분석 모드 / 분석 타겟 체인:</td>
           <td style="font-weight: bold; text-align: right;">${result.auto_settings.mode === 'fragment' ? '단편 (Fragment)' : '전체 (Full)'} / ${result.auto_settings.target_chain}체인</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
+          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${candidateSourceLabel}</td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>
