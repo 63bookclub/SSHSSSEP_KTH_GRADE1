@@ -294,10 +294,19 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
     let resolvedResidues: (number | string)[] = [];
     let isTemporary = false;
+    let actualMethod = method;
 
     if (method === 'manual') {
       if (manual_range && manual_range.trim()) {
         resolvedResidues = parseResidueRange(manual_range);
+        if (resolvedResidues.length === 0) {
+          return res.status(400).json({
+            error: `입력하신 수동 에피톱 범위('${manual_range}')의 형식이 올바르지 않거나 파싱된 잔기가 없습니다. (예: 400-505)`,
+          });
+        }
+      } else {
+        isTemporary = true;
+        actualMethod = 'temporary_rsa_fallback';
       }
     } else if (method === 'complex') {
       if (!complex_pdb_id) {
@@ -336,10 +345,30 @@ app.post('/api/v1/epitopes', async (req, res) => {
         );
 
         resolvedResidues = mappingResult.mappedResidues;
+        if (resolvedResidues.length === 0) {
+          if (manual_range && manual_range.trim()) {
+            resolvedResidues = parseResidueRange(manual_range);
+            actualMethod = 'manual';
+            if (resolvedResidues.length === 0) {
+              return res.status(400).json({
+                error: `복합체 PDB (${complex_pdb_id})에서 에피톱을 추출하지 못했고, 대체 수동 범위('${manual_range}')에서도 잔기가 발견되지 않았습니다.`,
+              });
+            }
+          } else {
+            return res.status(400).json({
+              error: `복합체 PDB (${complex_pdb_id}) 항원 체인(${agChain}) - 항체 체인(${abChains.join(',')}) 간 결합 에피톱 잔기를 추출하지 못했습니다.`,
+            });
+          }
+        }
       } catch (cErr: any) {
-        // Fallback to manual range or known contact residue ranges
-        if (manual_range) {
+        if (manual_range && manual_range.trim()) {
           resolvedResidues = parseResidueRange(manual_range);
+          actualMethod = 'manual';
+          if (resolvedResidues.length === 0) {
+            return res.status(400).json({
+              error: `복합체 PDB (${complex_pdb_id}) 처리 실패 (${cErr.message}) 및 대체 수동 범위('${manual_range}') 파싱 실패.`,
+            });
+          }
         } else {
           return res.status(400).json({
             error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 직접 잔기 번호를 입력하거나 다른 PDB ID를 시도해 주세요.`,
@@ -363,6 +392,14 @@ app.post('/api/v1/epitopes', async (req, res) => {
         }
       }
       resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => a - b);
+      if (resolvedResidues.length === 0) {
+        return res.status(400).json({
+          error: `예측 CSV 데이터에서 설정한 임계값(>=${threshold})을 만족하는 에피톱 잔기가 0개입니다. 임계값을 조정해 주세요.`,
+        });
+      }
+    } else if (method === 'temporary_rsa_fallback' || method === 'temporary') {
+      isTemporary = true;
+      actualMethod = 'temporary_rsa_fallback';
     }
 
     // Apply combination mode if additional ranges are given
@@ -374,23 +411,44 @@ app.post('/api/v1/epitopes', async (req, res) => {
       } else if (combination_mode === 'intersect') {
         const extraSet = new Set(extra);
         resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
+        if (resolvedResidues.length === 0) {
+          return res.status(400).json({
+            error: `에피톱 범위 교집합(intersect) 계산 결과 잔기가 0개입니다. 결합 조건 및 범위를 수정해 주세요.`,
+          });
+        }
       }
     }
 
-    // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
-    if (resolvedResidues.length === 0) {
+    // Final check for target structure presence
+    const targetResList = target.structure.residuesByChain[target_chain] || [];
+    if (!isTemporary && resolvedResidues.length > 0) {
+      const validRes = resolvedResidues.filter(r => {
+        return targetResList.some(tr => tr.resSeq === Number(r) || tr.resKey === String(r));
+      });
+      if (validRes.length === 0) {
+        return res.status(400).json({
+          error: `지정된 에피톱 잔기 (${resolvedResidues.join(', ')})가 타겟 체인(${target_chain}) 구조 내에 존재하지 않습니다. 잔기 번호 또는 체인을 확인해 주세요.`,
+        });
+      }
+    }
+
+    // Explicit temporary fallback if method was temporary or empty
+    if (resolvedResidues.length === 0 || isTemporary) {
       isTemporary = true;
-      const targetResList = target.structure.residuesByChain[target_chain] || [];
+      actualMethod = 'temporary_rsa_fallback';
       resolvedResidues = targetResList
         .filter(r => (r.rsa ?? 0) >= 0.2)
         .map(r => r.resSeq);
+      if (resolvedResidues.length === 0) {
+        resolvedResidues = targetResList.map(r => r.resSeq);
+      }
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
     epitopesStore.set(epitopeId, {
       id: epitopeId,
       targetId: target_id,
-      method: isTemporary ? 'temporary_rsa_fallback' : method,
+      method: actualMethod,
       residues: resolvedResidues,
       isTemporary,
       createdAtMs: Date.now(),
@@ -398,7 +456,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
     res.json({
       epitope_id: epitopeId,
-      method: isTemporary ? 'temporary_rsa_fallback' : method,
+      method: actualMethod,
       is_temporary: isTemporary,
       residues_count: resolvedResidues.length,
       residues: resolvedResidues,
@@ -788,20 +846,24 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
 
-    if (epitope_range && typeof epitope_range === 'string' && epitope_range.includes('-')) {
-      const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        const [start, end] = parts[0] <= parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
-        epitopeResidueSeqs = targetResidues
-          .filter(r => r.resSeq >= start && r.resSeq <= end)
-          .map(r => r.resSeq);
-        epitopeMethod = 'manual';
-        epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+    if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      const parsedSeqs = parseResidueRange(epitope_range);
+      if (parsedSeqs.length === 0) {
+        return res.status(400).json({
+          error: `입력하신 에피톱 범위('${epitope_range}')의 형식이 올바르지 않거나 파싱할 수 없습니다. (예: 400-505)`,
+        });
       }
-    }
-
-    if (epitopeResidueSeqs.length === 0) {
-      // Auto-fallback: surface exposed residues with RSA >= 0.20
+      epitopeResidueSeqs = targetResidues
+        .filter(r => parsedSeqs.includes(r.resSeq) || parsedSeqs.includes(r.resKey || ''))
+        .map(r => r.resSeq);
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({
+          error: `입력하신 에피톱 범위('${epitope_range}')에 해당하는 잔기가 타겟 체인(${targetChain}) 구조 내에 존재하지 않습니다. (타겟 체인 잔기 범위: ${targetResidues[0]?.resSeq}~${targetResidues[targetResidues.length - 1]?.resSeq})`,
+        });
+      }
+      epitopeMethod = 'manual';
+      epitopeDescription = `사용자 지정 잔기 범위 (${epitope_range}, ${epitopeResidueSeqs.length}개)`;
+    } else {
       epitopeResidueSeqs = targetResidues
         .filter(r => (r.rsa ?? 0) >= 0.20)
         .map(r => r.resSeq);
@@ -809,7 +871,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         epitopeResidueSeqs = targetResidues.map(r => r.resSeq);
       }
       epitopeMethod = 'temporary_rsa_fallback';
-      epitopeDescription = `표면 노출도 기반 자동 탐색 (RSA ≥ 0.20, ${epitopeResidueSeqs.length}개 잔기)`;
+      epitopeDescription = `표면 노출도 기반 임시 에피톱 (RSA ≥ 0.20, ${epitopeResidueSeqs.length}개 잔기)`;
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
@@ -1120,11 +1182,17 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         epitopeResidueSeqs.push(...resList);
       });
       epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    } else if (epitope_range && typeof epitope_range === 'string') {
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({ error: '지정된 다중 에피톱 범위에서 유효한 잔기를 파싱할 수 없습니다.' });
+      }
+      epitopeMethod = 'manual';
+    } else if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
       epitopeResidueSeqs = parseResidueRange(epitope_range);
-    }
-
-    if (epitopeResidueSeqs.length === 0) {
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({ error: `지정된 에피톱 범위('${epitope_range}')를 파싱할 수 없습니다.` });
+      }
+      epitopeMethod = 'manual';
+    } else {
       epitopeResidueSeqs = targetResidues
         .filter(r => (r.rsa ?? 0) >= 0.20)
         .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));

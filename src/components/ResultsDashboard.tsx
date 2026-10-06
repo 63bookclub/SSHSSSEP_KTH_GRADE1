@@ -656,7 +656,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
-          <span>인용 제안: US-align (Zhang et al.), TM-score, Shrake-Rupley Numerical SASA Integration.</span>
+          <span>인용 제안: TM-score 근사 구현 (Zhang et al. TM-align 휴리스틱), Shrake-Rupley Numerical SASA Integration.</span>
           <span className="font-mono">엔진: SSBD-Engine v1.0.0</span>
         </div>
       </div>
