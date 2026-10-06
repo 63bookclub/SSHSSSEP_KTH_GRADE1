@@ -283,8 +283,9 @@ app.post('/api/v1/epitopes', async (req, res) => {
       antibody_chains,
       prediction_csv_text,
       threshold = 0.5,
-      combination_mode = 'union', // 'single' | 'union' | 'intersect'
+      combination_mode = 'single', // 'single' | 'union' | 'intersect'
       additional_ranges,
+      allow_temporary = false,
     } = req.body;
 
     const target = targetsStore.get(target_id);
@@ -292,12 +293,31 @@ app.post('/api/v1/epitopes', async (req, res) => {
       return res.status(404).json({ error: '지정된 target_id를 찾을 수 없습니다.' });
     }
 
+    const targetResList = target.structure.residuesByChain[target_chain] || [];
+    if (targetResList.length === 0) {
+      return res.status(400).json({ error: `타겟 체인 '${target_chain}'에 해당하는 잔기가 없습니다.` });
+    }
+
+    const validResSeqSet = new Set(targetResList.map(r => String(r.resKey || r.resSeq)));
+
     let resolvedResidues: (number | string)[] = [];
     let isTemporary = false;
+    let failureReason = '';
 
-    if (method === 'manual') {
+    if (method === 'temporary_rsa' || (allow_temporary && (!manual_range && !complex_pdb_id && !prediction_csv_text))) {
+      isTemporary = true;
+      resolvedResidues = targetResList
+        .filter(r => (r.rsa ?? 0) >= 0.2)
+        .map(r => r.resSeq);
+    } else if (method === 'manual') {
       if (manual_range && manual_range.trim()) {
-        resolvedResidues = parseResidueRange(manual_range);
+        const parsed = parseResidueRange(manual_range);
+        resolvedResidues = parsed.filter(r => validResSeqSet.has(String(r)));
+        if (resolvedResidues.length === 0) {
+          failureReason = `입력한 수동 잔기 범위 (${manual_range}) 중 타겟 체인(${target_chain})에 존재하는 잔기가 0개입니다.`;
+        }
+      } else if (!allow_temporary) {
+        failureReason = '에피톱 잔기 범위를 입력해야 합니다.';
       }
     } else if (method === 'complex') {
       if (!complex_pdb_id) {
@@ -325,25 +345,26 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
         const rawContacts = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
         const complexAgResidues = complexStruct.residuesByChain[agChain] || [];
-        const targetResidues = target.structure.residuesByChain[target_chain] || [];
 
         const mappingResult = await mapComplexResiduesToTarget(
           complexAgResidues,
-          targetResidues,
+          targetResList,
           rawContacts,
           complex_pdb_id,
           target.identifier
         );
 
-        resolvedResidues = mappingResult.mappedResidues;
+        resolvedResidues = mappingResult.mappedResidues.filter(r => validResSeqSet.has(String(r)));
+        if (resolvedResidues.length === 0) {
+          failureReason = `복합체 PDB (${complex_pdb_id})에서 4.5 Å 이내 접촉 잔기를 매핑했으나 타겟 체인(${target_chain})과 일치하는 잔기가 0개입니다.`;
+        }
       } catch (cErr: any) {
-        // Fallback to manual range or known contact residue ranges
         if (manual_range) {
-          resolvedResidues = parseResidueRange(manual_range);
-        } else {
-          return res.status(400).json({
-            error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 직접 잔기 번호를 입력하거나 다른 PDB ID를 시도해 주세요.`,
-          });
+          const parsed = parseResidueRange(manual_range);
+          resolvedResidues = parsed.filter(r => validResSeqSet.has(String(r)));
+        }
+        if (resolvedResidues.length === 0) {
+          failureReason = `복합체 PDB (${complex_pdb_id}) 접촉 잔기 추출 실패: ${cErr.message}.`;
         }
       }
     } else if (method === 'prediction_csv') {
@@ -351,39 +372,52 @@ app.post('/api/v1/epitopes', async (req, res) => {
         return res.status(400).json({ error: '예측 도구 결과 CSV 또는 텍스트 데이터를 제공해야 합니다.' });
       }
       const lines = prediction_csv_text.split('\n');
-      const filtered: number[] = [];
+      const filtered: (number | string)[] = [];
       for (const line of lines) {
         const parts = line.split(/[,;\t\s]+/);
         if (parts.length >= 2) {
           const resNum = parseInt(parts[0], 10);
           const score = parseFloat(parts[1]);
           if (!isNaN(resNum) && !isNaN(score) && score >= threshold) {
-            filtered.push(resNum);
+            if (validResSeqSet.has(String(resNum))) {
+              filtered.push(resNum);
+            }
           }
         }
       }
-      resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => a - b);
+      resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+      if (resolvedResidues.length === 0) {
+        failureReason = `예측 CSV 데이터에서 임계값 (${threshold}) 이상이면서 타겟 체인(${target_chain})에 존재하는 잔기가 0개입니다.`;
+      }
     }
 
     // Apply combination mode if additional ranges are given
     if (additional_ranges && combination_mode !== 'single') {
-      const extra = parseResidueRange(additional_ranges);
+      const extra = parseResidueRange(additional_ranges).filter(r => validResSeqSet.has(String(r)));
       if (combination_mode === 'union') {
         const merged = new Set([...resolvedResidues, ...extra]);
         resolvedResidues = Array.from(merged).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
       } else if (combination_mode === 'intersect') {
         const extraSet = new Set(extra);
         resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
+        if (resolvedResidues.length === 0) {
+          failureReason = `추가 범위와의 교집합(Intersect) 연산 결과 공통 잔기가 0개입니다.`;
+        }
       }
     }
 
-    // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
+    // Fallback if resolvedResidues is empty
     if (resolvedResidues.length === 0) {
-      isTemporary = true;
-      const targetResList = target.structure.residuesByChain[target_chain] || [];
-      resolvedResidues = targetResList
-        .filter(r => (r.rsa ?? 0) >= 0.2)
-        .map(r => r.resSeq);
+      if (allow_temporary) {
+        isTemporary = true;
+        resolvedResidues = targetResList
+          .filter(r => (r.rsa ?? 0) >= 0.2)
+          .map(r => r.resSeq);
+      } else {
+        return res.status(400).json({
+          error: `${failureReason || '유효한 에피톱 잔기를 추출하지 못했습니다.'} 에피톱 입력값을 수정하시거나 '표면 노출 잔기(RSA ≥ 0.2) 임시 에피톱' 옵션을 직접 선택해 주세요.`,
+        });
+      }
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
@@ -402,7 +436,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       is_temporary: isTemporary,
       residues_count: resolvedResidues.length,
       residues: resolvedResidues,
-      note: isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
+      note: isTemporary ? '사용자 선택: 표면 노출 잔기 임시 에피톱 (RSA ≥ 0.2)' : '사용자 정의 에피톱',
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || '에피톱 처리 중 오류가 발생했습니다.' });
@@ -787,20 +821,28 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     let epitopeResidueSeqs: (number | string)[] = [];
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
+    const allowTemporary = req.body.allow_temporary !== false;
+    const validQuickTargetSet = new Set(targetResidues.map(r => String(r.resKey || r.resSeq)));
 
-    if (epitope_range && typeof epitope_range === 'string' && epitope_range.includes('-')) {
-      const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        const [start, end] = parts[0] <= parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
-        epitopeResidueSeqs = targetResidues
-          .filter(r => r.resSeq >= start && r.resSeq <= end)
-          .map(r => r.resSeq);
+    if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      const parsed = parseResidueRange(epitope_range.trim());
+      epitopeResidueSeqs = parsed.filter(r => validQuickTargetSet.has(String(r)));
+      if (epitopeResidueSeqs.length > 0) {
         epitopeMethod = 'manual';
-        epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+        epitopeDescription = `지정 잔기 범위 (${epitope_range}, ${epitopeResidueSeqs.length}개)`;
+      } else if (req.body.allow_temporary === false) {
+        return res.status(400).json({
+          error: `입력한 에피톱 범위 (${epitope_range}) 중 타겟 체인(${targetChain})에 존재하는 잔기가 0개입니다. 입력값을 확인하거나 표면 노출 잔기 임시 에피톱 모드를 선택해 주세요.`,
+        });
       }
     }
 
     if (epitopeResidueSeqs.length === 0) {
+      if (epitope_range && req.body.allow_temporary === false) {
+        return res.status(400).json({
+          error: `입력한 에피톱 범위 (${epitope_range}) 중 타겟 체인(${targetChain})에 존재하는 잔기가 0개입니다.`,
+        });
+      }
       // Auto-fallback: surface exposed residues with RSA >= 0.20
       epitopeResidueSeqs = targetResidues
         .filter(r => (r.rsa ?? 0) >= 0.20)
@@ -1113,18 +1155,27 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
     let epitopeResidueSeqs: (number | string)[] = [];
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'manual';
+    const validBatchTargetSet = new Set(targetResidues.map(r => String(r.resKey || r.resSeq)));
 
     if (multiEpitopesList && multiEpitopesList.length > 0) {
       multiEpitopesList.forEach(ep => {
         const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
         epitopeResidueSeqs.push(...resList);
       });
-      epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    } else if (epitope_range && typeof epitope_range === 'string') {
-      epitopeResidueSeqs = parseResidueRange(epitope_range);
+      epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs))
+        .filter(r => validBatchTargetSet.has(String(r)))
+        .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    } else if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      const parsed = parseResidueRange(epitope_range.trim());
+      epitopeResidueSeqs = parsed.filter(r => validBatchTargetSet.has(String(r)));
     }
 
     if (epitopeResidueSeqs.length === 0) {
+      if ((multiEpitopesList || epitope_range) && req.body.allow_temporary === false) {
+        return res.status(400).json({
+          error: `지정한 에피톱 입력 중 타겟 체인(${targetChain})에 존재하는 잔기가 0개입니다.`,
+        });
+      }
       epitopeResidueSeqs = targetResidues
         .filter(r => (r.rsa ?? 0) >= 0.20)
         .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));

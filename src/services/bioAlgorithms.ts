@@ -1318,8 +1318,8 @@ export function evaluateAntigenicMimicry(
     warnings.push(`지정된 에피톱 잔기 중 타겟 구조에 존재하지 않는 잔기 (${nonExistentResidues.join(', ')}) ${nonExistentResidues.length}개가 제외되었습니다.`);
   }
 
-  // Fallback check: if valid epitope set is empty, auto-populate with RSA >= 0.2
-  let isTemporary = false;
+  // Fallback check: if valid epitope set is empty or epitopeSource is temporary_rsa_fallback, set isTemporary = true
+  let isTemporary = epitopeSource === 'temporary_rsa_fallback';
   if (validEpitopeSet.size === 0) {
     isTemporary = true;
     targetResidues
@@ -1553,7 +1553,7 @@ export function evaluateAntigenicMimicry(
     residues: residueList,
     reproducibility: {
       toolVersions: {
-        'SSBD-Engine': '1.0.0 (TM-score approximation algorithm)',
+        'SSBD-Engine': '1.0.0 (TM-score 근사 구현)',
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       databaseVersions: {

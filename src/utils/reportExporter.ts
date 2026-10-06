@@ -233,7 +233,7 @@ export function generateReportHtml(
     </div>
     <div style="text-align: right; font-size: 10.5px; color: #64748b;">
       <div><strong>분석 일시:</strong> ${timestamp.substring(0, 19).replace('T', ' ')} UTC</div>
-      <div><strong>분석 엔진:</strong> SSBD Core v1.0.0 (Kabsch + TM-align + SASA)</div>
+      <div><strong>분석 엔진:</strong> SSBD Core v1.0.0 (Kabsch + TM-score 근사 구현 + SASA)</div>
     </div>
   </div>
 
@@ -359,7 +359,7 @@ export function generateReportHtml(
 
   <div style="margin-top: 16px; padding-top: 8px; border-top: 1px solid #cbd5e1; display: flex; justify-content: space-between; font-size: 10px; color: #64748b;">
     <span>2026 SSEP_TEAM SSBD(씁뜩) Bioinformatics Platform • Deterministic In Silico Mimicry Evaluation</span>
-    <span>Kabsch SVD + TM-score + Shrake-Rupley SASA Calculation</span>
+    <span>Kabsch SVD + TM-score 근사 구현 + Shrake-Rupley SASA Calculation</span>
   </div>
 </body>
 </html>`;
