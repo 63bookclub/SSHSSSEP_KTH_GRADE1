@@ -294,10 +294,16 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
     let resolvedResidues: (number | string)[] = [];
     let isTemporary = false;
+    let fallbackReason = '';
 
     if (method === 'manual') {
       if (manual_range && manual_range.trim()) {
         resolvedResidues = parseResidueRange(manual_range);
+        if (resolvedResidues.length === 0) {
+          fallbackReason = `입력한 수동 범위('${manual_range}')에서 유효한 잔기를 파싱하지 못했습니다.`;
+        }
+      } else {
+        fallbackReason = '수동 범위가 입력되지 않았습니다.';
       }
     } else if (method === 'complex') {
       if (!complex_pdb_id) {
@@ -336,14 +342,14 @@ app.post('/api/v1/epitopes', async (req, res) => {
         );
 
         resolvedResidues = mappingResult.mappedResidues;
+        if (resolvedResidues.length === 0) {
+          fallbackReason = `복합체 PDB(${complex_pdb_id})에서 추출된 에피톱 잔기가 0개입니다.`;
+        }
       } catch (cErr: any) {
-        // Fallback to manual range or known contact residue ranges
         if (manual_range) {
           resolvedResidues = parseResidueRange(manual_range);
         } else {
-          return res.status(400).json({
-            error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 직접 잔기 번호를 입력하거나 다른 PDB ID를 시도해 주세요.`,
-          });
+          fallbackReason = `복합체 PDB (${complex_pdb_id}) 파싱 오류: ${cErr.message}`;
         }
       }
     } else if (method === 'prediction_csv') {
@@ -363,6 +369,9 @@ app.post('/api/v1/epitopes', async (req, res) => {
         }
       }
       resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => a - b);
+      if (resolvedResidues.length === 0) {
+        fallbackReason = `예측 CSV에서 임계값(${threshold}) 이상의 잔기가 0개로 파싱되었습니다.`;
+      }
     }
 
     // Apply combination mode if additional ranges are given
@@ -373,17 +382,36 @@ app.post('/api/v1/epitopes', async (req, res) => {
         resolvedResidues = Array.from(merged).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
       } else if (combination_mode === 'intersect') {
         const extraSet = new Set(extra);
+        const originalCount = resolvedResidues.length;
         resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
+        if (resolvedResidues.length === 0) {
+          fallbackReason = `교집합 모드 적용 후 공통 잔기(${originalCount}개 ∩ 추가 범위)가 0개가 되었습니다.`;
+        }
       }
     }
 
-    // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
+    const { allow_temporary_fallback } = req.body;
+
+    // Handle 0 residues case: error if temporary fallback not explicitly allowed/chosen by user
     if (resolvedResidues.length === 0) {
-      isTemporary = true;
-      const targetResList = target.structure.residuesByChain[target_chain] || [];
-      resolvedResidues = targetResList
-        .filter(r => (r.rsa ?? 0) >= 0.2)
-        .map(r => r.resSeq);
+      if (allow_temporary_fallback || method === 'temporary_rsa_fallback') {
+        isTemporary = true;
+        const targetResList = target.structure.residuesByChain[target_chain] || [];
+        resolvedResidues = targetResList
+          .filter(r => (r.rsa ?? 0) >= 0.2)
+          .map(r => r.resSeq);
+        if (!fallbackReason) {
+          fallbackReason = '지정된 에피톱 입력 조건에 해당하는 잔기가 존재하지 않습니다.';
+        }
+      } else {
+        if (!fallbackReason) {
+          fallbackReason = '지정된 에피톱 입력 조건에 해당하는 잔기가 존재하지 않습니다.';
+        }
+        return res.status(400).json({
+          error: `${fallbackReason} 임시 모드(표면 노출 잔기 사용)를 직접 선택하시거나 잔기 입력 범위를 확인해 주세요.`,
+          can_fallback_temporary: true,
+        });
+      }
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
@@ -402,6 +430,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       is_temporary: isTemporary,
       residues_count: resolvedResidues.length,
       residues: resolvedResidues,
+      fallback_reason: isTemporary ? fallbackReason : undefined,
       note: isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
     });
   } catch (err: any) {
