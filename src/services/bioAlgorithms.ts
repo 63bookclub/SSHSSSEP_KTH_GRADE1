@@ -1328,7 +1328,11 @@ export function evaluateAntigenicMimicry(
     if (validEpitopeSet.size === 0) {
       targetResidues.forEach(r => validEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode)));
     }
-    warnings.push('유효한 에피톱 잔기가 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.');
+    if (epitopeSource !== 'temporary_rsa_fallback' && rawEpitopeSet.size > 0) {
+      warnings.push('사용자가 지정한 에피톱 잔기 중 타겟 구조에 존재하는 유효 잔기가 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.');
+    } else {
+      warnings.push('유효한 에피톱 잔기가 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.');
+    }
   }
 
   const effectiveEpitopeSet = validEpitopeSet;
@@ -1553,7 +1557,7 @@ export function evaluateAntigenicMimicry(
     residues: residueList,
     reproducibility: {
       toolVersions: {
-        'SSBD-Engine': '1.0.0 (TM-score approximation algorithm)',
+        'SSBD-Engine': '1.0.0 (TM-score 근사 구현)',
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       databaseVersions: {

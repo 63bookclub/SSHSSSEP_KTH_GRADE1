@@ -414,11 +414,32 @@ END
 
     expect(evalResult.reproducibility).toBeDefined();
     expect(evalResult.reproducibility.timestamp).toBeDefined();
+    expect(evalResult.reproducibility.toolVersions['SSBD-Engine']).toContain('TM-score 근사 구현');
     expect(evalResult.reproducibility.databaseVersions).toBeDefined();
     expect(evalResult.reproducibility.databaseVersions['AlphaFold-DB']).toContain('v4');
     expect(evalResult.reproducibility.inputHash).toBeDefined();
     expect(typeof evalResult.reproducibility.inputHash).toBe('string');
     expect(evalResult.reproducibility.inputHash.length).toBeGreaterThan(0);
+  });
+
+  it('should include explicit warning when user-provided epitope has no valid residues on target', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    // Pass only non-existent residues 998, 999
+    const evalResult = evaluateAntigenicMimicry(alignment, [998, 999], false, [0.25, 0.40, 0.20, 0.15], 'manual');
+
+    expect(evalResult.autoSettings.isTemporaryEpitope).toBe(true);
+    expect(evalResult.autoSettings.warnings).toBeDefined();
+    expect(evalResult.autoSettings.warnings!.some(w => w.includes('표면 노출 잔기'))).toBe(true);
   });
 });
 
