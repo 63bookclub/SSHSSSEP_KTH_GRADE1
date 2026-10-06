@@ -38,21 +38,24 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
       const payload: any = {
         target_id: targetData.target_id,
         target_chain: selectedChain,
-        method,
+        method: allowEmpty ? 'temporary_rsa_fallback' : method,
+        allow_temporary_fallback: allowEmpty,
         combination_mode: combinationMode,
         additional_ranges: additionalRange,
       };
 
-      if (method === 'manual') {
-        payload.manual_range = allowEmpty ? '' : manualRange;
-      } else if (method === 'complex') {
-        payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
-        payload.antibody_chains = antibodyChains;
-        payload.antigen_chain = antigenChain || selectedChain;
-        payload.manual_range = manualRange;
-      } else if (method === 'prediction_csv') {
-        payload.prediction_csv_text = csvText;
-        payload.threshold = threshold;
+      if (!allowEmpty) {
+        if (method === 'manual') {
+          payload.manual_range = manualRange;
+        } else if (method === 'complex') {
+          payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
+          payload.antibody_chains = antibodyChains;
+          payload.antigen_chain = antigenChain || selectedChain;
+          payload.manual_range = manualRange;
+        } else if (method === 'prediction_csv') {
+          payload.prediction_csv_text = csvText;
+          payload.threshold = threshold;
+        }
       }
 
       const res = await submitEpitope(payload);

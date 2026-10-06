@@ -285,6 +285,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       threshold = 0.5,
       combination_mode = 'union', // 'single' | 'union' | 'intersect'
       additional_ranges,
+      allow_temporary_fallback = false,
     } = req.body;
 
     const target = targetsStore.get(target_id);
@@ -295,9 +296,20 @@ app.post('/api/v1/epitopes', async (req, res) => {
     let resolvedResidues: (number | string)[] = [];
     let isTemporary = false;
 
-    if (method === 'manual') {
+    if (method === 'temporary_rsa_fallback' || allow_temporary_fallback) {
+      isTemporary = true;
+      const targetResList = target.structure.residuesByChain[target_chain] || [];
+      resolvedResidues = targetResList
+        .filter(r => (r.rsa ?? 0) >= 0.2)
+        .map(r => r.resSeq);
+    } else if (method === 'manual') {
       if (manual_range && manual_range.trim()) {
         resolvedResidues = parseResidueRange(manual_range);
+      }
+      if (resolvedResidues.length === 0) {
+        return res.status(400).json({
+          error: '입력한 수동 에피톱 잔기 범위에서 유효한 잔기를 찾을 수 없습니다. 잔기 번호 범위를 확인하거나, "표면 노출 잔기(임시 에피톱)" 모드를 클릭해 주세요.',
+        });
       }
     } else if (method === 'complex') {
       if (!complex_pdb_id) {
@@ -337,7 +349,6 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
         resolvedResidues = mappingResult.mappedResidues;
       } catch (cErr: any) {
-        // Fallback to manual range or known contact residue ranges
         if (manual_range) {
           resolvedResidues = parseResidueRange(manual_range);
         } else {
@@ -345,6 +356,11 @@ app.post('/api/v1/epitopes', async (req, res) => {
             error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 직접 잔기 번호를 입력하거나 다른 PDB ID를 시도해 주세요.`,
           });
         }
+      }
+      if (resolvedResidues.length === 0) {
+        return res.status(400).json({
+          error: `복합체 PDB (${complex_pdb_id})에서 유효한 4.5Å 접촉 에피톱 잔기를 추출하지 못했습니다. PDB ID 및 체인을 확인하시거나 표면 노출 잔기 모드를 선택해 주세요.`,
+        });
       }
     } else if (method === 'prediction_csv') {
       if (!prediction_csv_text) {
@@ -363,6 +379,11 @@ app.post('/api/v1/epitopes', async (req, res) => {
         }
       }
       resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => a - b);
+      if (resolvedResidues.length === 0) {
+        return res.status(400).json({
+          error: `예측 결과 CSV에서 임계값(${threshold}) 이상인 잔기가 없습니다. 임계값을 조정하거나 표면 노출 잔기 모드를 선택해 주세요.`,
+        });
+      }
     }
 
     // Apply combination mode if additional ranges are given
@@ -374,11 +395,21 @@ app.post('/api/v1/epitopes', async (req, res) => {
       } else if (combination_mode === 'intersect') {
         const extraSet = new Set(extra);
         resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
+        if (resolvedResidues.length === 0) {
+          return res.status(400).json({
+            error: '에피톱 결합 방식(교집합: intersect) 적용 결과 공통 잔기가 0개입니다. 결합 방식을 "합집합"으로 변경하거나 범위를 수정해 주세요.',
+          });
+        }
       }
     }
 
-    // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
+    // Fallback: If no epitope residues found and temporary fallback is allowed
     if (resolvedResidues.length === 0) {
+      if (!allow_temporary_fallback) {
+        return res.status(400).json({
+          error: '유효한 에피톱 잔기를 추출하지 못했습니다. 에피톱 입력값을 확인하거나 "표면 노출 잔기(임시 에피톱)" 모드를 선택해 주세요.',
+        });
+      }
       isTemporary = true;
       const targetResList = target.structure.residuesByChain[target_chain] || [];
       resolvedResidues = targetResList
@@ -788,15 +819,30 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
 
-    if (epitope_range && typeof epitope_range === 'string' && epitope_range.includes('-')) {
-      const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        const [start, end] = parts[0] <= parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
-        epitopeResidueSeqs = targetResidues
-          .filter(r => r.resSeq >= start && r.resSeq <= end)
-          .map(r => r.resSeq);
-        epitopeMethod = 'manual';
-        epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+    if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      if (epitope_range.includes('-')) {
+        const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+          const [start, end] = parts[0] <= parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
+          epitopeResidueSeqs = targetResidues
+            .filter(r => r.resSeq >= start && r.resSeq <= end)
+            .map(r => r.resSeq);
+          epitopeMethod = 'manual';
+          epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+        }
+      }
+      if (epitopeResidueSeqs.length === 0) {
+        epitopeResidueSeqs = parseResidueRange(epitope_range);
+        if (epitopeResidueSeqs.length > 0) {
+          epitopeMethod = 'manual';
+          epitopeDescription = `지정 잔기 목록 (${epitopeResidueSeqs.length}개)`;
+        }
+      }
+
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({
+          error: `지정한 에피톱 범위 '${epitope_range}'에 유효한 잔기가 존재하지 않습니다. 타겟 구조 잔기 번호를 확인하거나 비워두어 표면 노출 잔기 모드로 분석해 주세요.`,
+        });
       }
     }
 
@@ -1120,8 +1166,18 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         epitopeResidueSeqs.push(...resList);
       });
       epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    } else if (epitope_range && typeof epitope_range === 'string') {
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({
+          error: '지정한 다중 에피톱 범위에 유효한 잔기가 존재하지 않습니다.',
+        });
+      }
+    } else if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
       epitopeResidueSeqs = parseResidueRange(epitope_range);
+      if (epitopeResidueSeqs.length === 0) {
+        return res.status(400).json({
+          error: `지정한 에피톱 범위 '${epitope_range}'에 유효한 잔기가 존재하지 않습니다. 잔기 번호를 확인하시거나 비워두세요.`,
+        });
+      }
     }
 
     if (epitopeResidueSeqs.length === 0) {
