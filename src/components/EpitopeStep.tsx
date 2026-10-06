@@ -38,21 +38,24 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
       const payload: any = {
         target_id: targetData.target_id,
         target_chain: selectedChain,
-        method,
+        method: allowEmpty ? 'temporary_rsa' : method,
         combination_mode: combinationMode,
         additional_ranges: additionalRange,
+        allow_temporary_fallback: allowEmpty,
       };
 
-      if (method === 'manual') {
-        payload.manual_range = allowEmpty ? '' : manualRange;
-      } else if (method === 'complex') {
-        payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
-        payload.antibody_chains = antibodyChains;
-        payload.antigen_chain = antigenChain || selectedChain;
-        payload.manual_range = manualRange;
-      } else if (method === 'prediction_csv') {
-        payload.prediction_csv_text = csvText;
-        payload.threshold = threshold;
+      if (!allowEmpty) {
+        if (method === 'manual') {
+          payload.manual_range = manualRange;
+        } else if (method === 'complex') {
+          payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
+          payload.antibody_chains = antibodyChains;
+          payload.antigen_chain = antigenChain || selectedChain;
+          payload.manual_range = manualRange;
+        } else if (method === 'prediction_csv') {
+          payload.prediction_csv_text = csvText;
+          payload.threshold = threshold;
+        }
       }
 
       const res = await submitEpitope(payload);
@@ -320,6 +323,11 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
                     </span>
                   )}
                 </div>
+                {epitopeResult.is_temporary && (
+                  <p className="mt-2 text-[11px] text-amber-300/90 leading-tight">
+                    💡 표면 노출 잔기(RSA ≥ 0.20)가 임시 에피톱으로 설정되었습니다. 특정 실험 에피톱을 사용하시려면 상단 탭에서 번호 범위나 PDB ID를 입력하고 확정해 주세요.
+                  </p>
+                )}
                 <div className="mt-1.5 flex flex-wrap gap-1 max-h-20 overflow-y-auto pr-1">
                   {epitopeResult.residues.slice(0, 45).map((r) => (
                     <span
