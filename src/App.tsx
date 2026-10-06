@@ -566,7 +566,7 @@ export default function App() {
                     ) : (
                       <Play className="w-4 h-4 fill-current text-slate-950" />
                     )}
-                    <span>{analyzing ? 'US-align 및 3D 정렬 계산 중...' : '3D 구조 정렬 및 모방도 분석 실행'}</span>
+                    <span>{analyzing ? 'TM-score 근사 및 3D 정렬 계산 중...' : '3D 구조 정렬 및 모방도 분석 실행'}</span>
                   </button>
                 </div>
               </div>
@@ -619,7 +619,7 @@ export default function App() {
       <footer className="mt-auto border-t border-slate-900 bg-slate-950/80 py-5 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2">
           <span>2026 SSEP_TEAM SSBD(씁뜩) · 개발 명세서 준수 시스템</span>
-          <span>US-align / TM-align Algorithm & Shrake-Rupley SASA Numerical Integration</span>
+          <span>TM-score 근사 구현 Algorithm & Shrake-Rupley SASA Numerical Integration</span>
           <button
             onClick={() => setIsGlossaryOpen(true)}
             className="text-cyan-400 hover:underline"

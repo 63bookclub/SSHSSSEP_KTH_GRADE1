@@ -18,6 +18,7 @@ import {
   getResidueKey,
 } from './src/services/bioAlgorithms.ts';
 import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
+import { resolveEpitopeResidues } from './src/services/epitopeService.ts';
 import { predictStructureWithESMFold } from './src/services/esmFoldService.ts';
 import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
@@ -285,6 +286,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       threshold = 0.5,
       combination_mode = 'union', // 'single' | 'union' | 'intersect'
       additional_ranges,
+      allow_temporary = false,
     } = req.body;
 
     const target = targetsStore.get(target_id);
@@ -292,14 +294,10 @@ app.post('/api/v1/epitopes', async (req, res) => {
       return res.status(404).json({ error: '지정된 target_id를 찾을 수 없습니다.' });
     }
 
-    let resolvedResidues: (number | string)[] = [];
-    let isTemporary = false;
+    const targetResidues = target.structure.residuesByChain[target_chain] || [];
+    let complexContacts: (number | string)[] = [];
 
-    if (method === 'manual') {
-      if (manual_range && manual_range.trim()) {
-        resolvedResidues = parseResidueRange(manual_range);
-      }
-    } else if (method === 'complex') {
+    if (method === 'complex') {
       if (!complex_pdb_id) {
         return res.status(400).json({ error: '복합체 PDB ID를 입력해야 합니다.' });
       }
@@ -325,7 +323,6 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
         const rawContacts = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
         const complexAgResidues = complexStruct.residuesByChain[agChain] || [];
-        const targetResidues = target.structure.residuesByChain[target_chain] || [];
 
         const mappingResult = await mapComplexResiduesToTarget(
           complexAgResidues,
@@ -335,74 +332,53 @@ app.post('/api/v1/epitopes', async (req, res) => {
           target.identifier
         );
 
-        resolvedResidues = mappingResult.mappedResidues;
+        complexContacts = mappingResult.mappedResidues;
       } catch (cErr: any) {
-        // Fallback to manual range or known contact residue ranges
-        if (manual_range) {
-          resolvedResidues = parseResidueRange(manual_range);
-        } else {
+        if (!allow_temporary) {
           return res.status(400).json({
-            error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 직접 잔기 번호를 입력하거나 다른 PDB ID를 시도해 주세요.`,
+            error: `복합체 PDB (${complex_pdb_id}) 다운로드/파싱 실패: ${cErr.message}. 수동 범위 입력 또는 표면 노출 잔기 모드를 선택해 주세요.`,
           });
         }
       }
-    } else if (method === 'prediction_csv') {
-      if (!prediction_csv_text) {
-        return res.status(400).json({ error: '예측 도구 결과 CSV 또는 텍스트 데이터를 제공해야 합니다.' });
-      }
-      const lines = prediction_csv_text.split('\n');
-      const filtered: number[] = [];
-      for (const line of lines) {
-        const parts = line.split(/[,;\t\s]+/);
-        if (parts.length >= 2) {
-          const resNum = parseInt(parts[0], 10);
-          const score = parseFloat(parts[1]);
-          if (!isNaN(resNum) && !isNaN(score) && score >= threshold) {
-            filtered.push(resNum);
-          }
-        }
-      }
-      resolvedResidues = Array.from(new Set(filtered)).sort((a, b) => a - b);
     }
 
-    // Apply combination mode if additional ranges are given
-    if (additional_ranges && combination_mode !== 'single') {
-      const extra = parseResidueRange(additional_ranges);
-      if (combination_mode === 'union') {
-        const merged = new Set([...resolvedResidues, ...extra]);
-        resolvedResidues = Array.from(merged).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-      } else if (combination_mode === 'intersect') {
-        const extraSet = new Set(extra);
-        resolvedResidues = resolvedResidues.filter(r => extraSet.has(r));
-      }
-    }
+    const resolution = resolveEpitopeResidues({
+      method,
+      manualRange: manual_range,
+      complexPdbId: complex_pdb_id,
+      antigenChain: antigen_chain,
+      antibodyChains: antibody_chains,
+      predictionCsvText: prediction_csv_text,
+      threshold,
+      combinationMode: combination_mode,
+      additionalRanges: additional_ranges,
+      targetResidues,
+      targetChain: target_chain,
+      complexContacts,
+      allowTemporaryFallback: allow_temporary,
+    });
 
-    // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
-    if (resolvedResidues.length === 0) {
-      isTemporary = true;
-      const targetResList = target.structure.residuesByChain[target_chain] || [];
-      resolvedResidues = targetResList
-        .filter(r => (r.rsa ?? 0) >= 0.2)
-        .map(r => r.resSeq);
+    if (!resolution.success) {
+      return res.status(400).json({ error: resolution.error });
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
     epitopesStore.set(epitopeId, {
       id: epitopeId,
       targetId: target_id,
-      method: isTemporary ? 'temporary_rsa_fallback' : method,
-      residues: resolvedResidues,
-      isTemporary,
+      method: resolution.method,
+      residues: resolution.residues,
+      isTemporary: resolution.isTemporary,
       createdAtMs: Date.now(),
     });
 
     res.json({
       epitope_id: epitopeId,
-      method: isTemporary ? 'temporary_rsa_fallback' : method,
-      is_temporary: isTemporary,
-      residues_count: resolvedResidues.length,
-      residues: resolvedResidues,
-      note: isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
+      method: resolution.method,
+      is_temporary: resolution.isTemporary,
+      residues_count: resolution.residues.length,
+      residues: resolution.residues,
+      note: resolution.note,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || '에피톱 처리 중 오류가 발생했습니다.' });
@@ -788,26 +764,27 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
 
-    if (epitope_range && typeof epitope_range === 'string' && epitope_range.includes('-')) {
-      const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        const [start, end] = parts[0] <= parts[1] ? [parts[0], parts[1]] : [parts[1], parts[0]];
-        epitopeResidueSeqs = targetResidues
-          .filter(r => r.resSeq >= start && r.resSeq <= end)
-          .map(r => r.resSeq);
-        epitopeMethod = 'manual';
-        epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+    if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      const resolution = resolveEpitopeResidues({
+        method: 'manual',
+        manualRange: epitope_range,
+        targetResidues,
+        targetChain,
+        allowTemporaryFallback: false,
+      });
+      if (!resolution.success) {
+        return res.status(400).json({ error: resolution.error });
       }
-    }
-
-    if (epitopeResidueSeqs.length === 0) {
-      // Auto-fallback: surface exposed residues with RSA >= 0.20
-      epitopeResidueSeqs = targetResidues
-        .filter(r => (r.rsa ?? 0) >= 0.20)
-        .map(r => r.resSeq);
-      if (epitopeResidueSeqs.length === 0) {
-        epitopeResidueSeqs = targetResidues.map(r => r.resSeq);
-      }
+      epitopeResidueSeqs = resolution.residues;
+      epitopeMethod = 'manual';
+      epitopeDescription = `지정 잔기 범위 (${epitope_range}, ${epitopeResidueSeqs.length}개)`;
+    } else {
+      const resolution = resolveEpitopeResidues({
+        method: 'temporary_rsa_fallback',
+        targetResidues,
+        targetChain,
+      });
+      epitopeResidueSeqs = resolution.residues;
       epitopeMethod = 'temporary_rsa_fallback';
       epitopeDescription = `표면 노출도 기반 자동 탐색 (RSA ≥ 0.20, ${epitopeResidueSeqs.length}개 잔기)`;
     }
@@ -1120,17 +1097,25 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         epitopeResidueSeqs.push(...resList);
       });
       epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    } else if (epitope_range && typeof epitope_range === 'string') {
-      epitopeResidueSeqs = parseResidueRange(epitope_range);
-    }
-
-    if (epitopeResidueSeqs.length === 0) {
-      epitopeResidueSeqs = targetResidues
-        .filter(r => (r.rsa ?? 0) >= 0.20)
-        .map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
-      if (epitopeResidueSeqs.length === 0) {
-        epitopeResidueSeqs = targetResidues.map(r => r.resKey || getResidueKey(r.resSeq, r.iCode));
+    } else if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim()) {
+      const resolution = resolveEpitopeResidues({
+        method: 'manual',
+        manualRange: epitope_range,
+        targetResidues,
+        targetChain,
+        allowTemporaryFallback: false,
+      });
+      if (!resolution.success) {
+        return res.status(400).json({ error: resolution.error });
       }
+      epitopeResidueSeqs = resolution.residues;
+    } else {
+      const resolution = resolveEpitopeResidues({
+        method: 'temporary_rsa_fallback',
+        targetResidues,
+        targetChain,
+      });
+      epitopeResidueSeqs = resolution.residues;
       epitopeMethod = 'temporary_rsa_fallback';
     }
 

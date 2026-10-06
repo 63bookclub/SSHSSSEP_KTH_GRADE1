@@ -13,6 +13,7 @@ import {
   threadSequenceOnTemplate,
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
+import { resolveEpitopeResidues } from './epitopeService';
 
 describe('Structural Alignment Algorithm (alignStructures)', () => {
   it('should align structures based on 3D C-alpha coordinates even when sequence names do not match', () => {
@@ -453,5 +454,77 @@ END
 
     expect(evalResult.autoSettings.candidateSource).toBe('simulated');
     expect(evalResult.autoSettings.isSimulated).toBe(true);
+    expect(evalResult.reproducibility.toolVersions['SSBD-Engine']).toBe('1.0.0 (TM-score 근사 구현)');
+  });
+});
+
+describe('Epitope Service & Explicit Failure Handling', () => {
+  const samplePdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 102     7.600   0.000   0.000  1.00 90.00           C
+TER
+END
+`.trim();
+  const targetStruct = parsePdb(samplePdb);
+  const targetRes = targetStruct.residuesByChain['A'];
+
+  it('should resolve valid manual ranges without temporary fallback', () => {
+    const result = resolveEpitopeResidues({
+      method: 'manual',
+      manualRange: '100-101',
+      targetResidues: targetRes,
+      targetChain: 'A',
+      allowTemporaryFallback: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.isTemporary).toBe(false);
+    expect(result.residues).toEqual([100, 101]);
+  });
+
+  it('should return error when manual range residues do not exist on target chain', () => {
+    const result = resolveEpitopeResidues({
+      method: 'manual',
+      manualRange: '500-510',
+      targetResidues: targetRes,
+      targetChain: 'A',
+      allowTemporaryFallback: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.isTemporary).toBe(false);
+    expect(result.error).toContain('존재하지 않습니다');
+  });
+
+  it('should return error when CSV prediction threshold filters out all residues', () => {
+    const csv = `Residue_ID,Score\n100,0.40\n101,0.50`;
+    const result = resolveEpitopeResidues({
+      method: 'prediction_csv',
+      predictionCsvText: csv,
+      threshold: 0.90,
+      targetResidues: targetRes,
+      targetChain: 'A',
+      allowTemporaryFallback: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.isTemporary).toBe(false);
+    expect(result.error).toContain('0개입니다');
+  });
+
+  it('should allow temporary fallback when allowTemporaryFallback is explicitly true', () => {
+    const result = resolveEpitopeResidues({
+      method: 'manual',
+      manualRange: '999',
+      targetResidues: targetRes,
+      targetChain: 'A',
+      allowTemporaryFallback: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.isTemporary).toBe(true);
+    expect(result.method).toBe('temporary_rsa_fallback');
+    expect(result.residues.length).toBeGreaterThan(0);
   });
 });

@@ -15,7 +15,7 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
   onEpitopeReady,
   currentEpitope,
 }) => {
-  const [method, setMethod] = useState<'manual' | 'complex' | 'prediction_csv'>('manual');
+  const [method, setMethod] = useState<'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback'>('manual');
   const [manualRange, setManualRange] = useState('');
   const [complexPdbId, setComplexPdbId] = useState('');
   const [antibodyChains, setAntibodyChains] = useState('');
@@ -43,8 +43,11 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
         additional_ranges: additionalRange,
       };
 
-      if (method === 'manual') {
-        payload.manual_range = allowEmpty ? '' : manualRange;
+      if (allowEmpty || method === 'temporary_rsa_fallback') {
+        payload.method = 'temporary_rsa_fallback';
+        payload.allow_temporary = true;
+      } else if (method === 'manual') {
+        payload.manual_range = manualRange;
       } else if (method === 'complex') {
         payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
         payload.antibody_chains = antibodyChains;
@@ -122,6 +125,14 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
               }`}
             >
               예측 도구 결과 업로드
+            </button>
+            <button
+              onClick={() => { setMethod('temporary_rsa_fallback'); setError(null); }}
+              className={`px-3 py-1.5 rounded-lg font-medium transition ${
+                method === 'temporary_rsa_fallback' ? 'bg-cyan-600 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              표면 노출 잔기 (RSA ≥ 0.2)
             </button>
           </div>
         </div>
@@ -213,6 +224,22 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
             </div>
           )}
 
+          {method === 'temporary_rsa_fallback' && (
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="text-xs text-slate-300">
+                <span className="font-semibold text-cyan-300">표면 노출 잔기 (RSA ≥ 0.2) 임시 모드:</span> 실험적으로 검증된 에피톱 정보가 없을 때, 타겟 단백질의 상대적 용매 접근 표면적(RSA)이 20% 이상인 잔기들을 임시 에피톱으로 자동 적용합니다.
+              </div>
+              <button
+                onClick={() => handleApplyEpitope(true)}
+                disabled={loading}
+                className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs shadow-lg transition disabled:opacity-50"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
+                <span>표면 노출 잔기 모드 확정</span>
+              </button>
+            </div>
+          )}
+
           {method === 'prediction_csv' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -297,9 +324,20 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
           </div>
 
           {error && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <span>{error}</span>
+            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs space-y-2">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                <span className="leading-relaxed">{error}</span>
+              </div>
+              <div className="pt-2 border-t border-rose-500/20 flex justify-end">
+                <button
+                  onClick={() => { setMethod('temporary_rsa_fallback'); setError(null); handleApplyEpitope(true); }}
+                  className="px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-200 border border-rose-600/50 text-[11px] font-bold transition flex items-center space-x-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>표면 노출 잔기(RSA ≥ 0.2) 모드로 전환하여 진행</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
