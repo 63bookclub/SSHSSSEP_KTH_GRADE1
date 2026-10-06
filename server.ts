@@ -52,6 +52,8 @@ interface StoredCandidate {
   sequence?: string;
   structure: ParsedStructure;
   isExperimental: boolean;
+  candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated';
+  isSimulated: boolean;
   chain: string;
   createdAtMs: number;
 }
@@ -414,12 +416,16 @@ app.post('/api/v1/candidates', async (req, res) => {
     let structureText = '';
     let parsedSeq = '';
     let isExperimental = !!is_experimental;
+    let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = isExperimental ? 'experimental' : 'esmfold';
+    let isSimulated = false;
     let sourceType: 'fasta' | 'sequence' | 'pdb' = 'sequence';
 
     if (raw_pdb) {
       sourceType = 'pdb';
       structureText = raw_pdb;
       isExperimental = true;
+      candidateSource = 'experimental';
+      isSimulated = false;
     } else {
       // Sequence or FASTA input
       let rawInput = (fasta_text || sequence || '').trim();
@@ -439,6 +445,8 @@ app.post('/api/v1/candidates', async (req, res) => {
       if (esmResult.success && esmResult.pdbText) {
         structureText = esmResult.pdbText;
         parsedSeq = esmResult.sequence || parsedSeq;
+        candidateSource = 'esmfold';
+        isSimulated = false;
       } else {
         return res.status(400).json({
           error: `ESMFold 예측 실패: ${esmResult.error || '구조 예측에 실패했습니다.'} 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.`,
@@ -469,6 +477,8 @@ app.post('/api/v1/candidates', async (req, res) => {
       sequence: parsedSeq,
       structure,
       isExperimental,
+      candidateSource,
+      isSimulated,
       chain: candChain,
       createdAtMs: Date.now(),
     });
@@ -477,6 +487,8 @@ app.post('/api/v1/candidates', async (req, res) => {
       candidate_id: candidateId,
       source_type: sourceType,
       is_experimental: isExperimental,
+      candidate_source: candidateSource,
+      is_simulated: isSimulated,
       chain: candChain,
       residues_count: resList.length,
       sample_pdb: structure.rawPdb,
@@ -547,6 +559,8 @@ app.post('/api/v1/jobs', async (req, res) => {
           candResidues,
           epitopeResidues: epitope.residues,
           isExperimentalCandidate: candidate.isExperimental,
+          candidateSource: candidate.candidateSource,
+          isSimulated: candidate.isSimulated,
           customWeights,
           epitopeMethod: epitope.method,
           targetChain: target_chain,
@@ -611,6 +625,7 @@ app.get('/api/v1/jobs/:job_id', (req, res) => {
   const align = (job.result.alignment || {}) as any;
   const auto = (job.result.autoSettings || {}) as any;
   const sub = (job.result.subScores || {}) as any;
+  const candidate = candidatesStore.get(job.candidateId);
 
   const respData = {
     status: 'done',
@@ -621,6 +636,8 @@ app.get('/api/v1/jobs/:job_id', (req, res) => {
         target_chain: auto.target_chain || auto.targetChain || 'A',
         is_temporary_epitope: auto.is_temporary_epitope ?? auto.isTemporaryEpitope ?? false,
         is_experimental_candidate: auto.is_experimental_candidate ?? auto.isExperimentalCandidate ?? false,
+        candidate_source: auto.candidate_source || auto.candidateSource || candidate?.candidateSource || 'experimental',
+        is_simulated: auto.is_simulated ?? auto.isSimulated ?? candidate?.isSimulated ?? false,
       },
       alignment: {
         tm_score_target_norm: align.tm_score_target_norm ?? align.tmScoreTargetNorm ?? 0,
@@ -819,11 +836,15 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
 
     let candStructure: ParsedStructure;
     let isCandExperimental = false;
+    let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = 'experimental';
+    let isSimulated = false;
     let candChain = reqCandidateChain?.trim() || 'A';
 
     if (cleanCandidate.startsWith('ATOM') || cleanCandidate.startsWith('HEADER') || cleanCandidate.includes('_atom_site.')) {
       candStructure = cleanCandidate.includes('_atom_site.') ? parseMmcif(cleanCandidate) : parsePdb(cleanCandidate);
       isCandExperimental = true;
+      candidateSource = 'experimental';
+      isSimulated = false;
       candChain = candStructure.chains[0] || 'A';
     } else if (isValidPdbId(cleanCandidate)) {
       const candId = cleanCandidate.toUpperCase();
@@ -835,6 +856,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         const txt = await r.text();
         candStructure = parsePdb(txt);
         isCandExperimental = true;
+        candidateSource = 'experimental';
+        isSimulated = false;
         candChain = candStructure.chains[0] || 'A';
       } catch (err: any) {
         return res.status(400).json({
@@ -851,6 +874,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       if (esmResult.success && esmResult.parsedStructure) {
         candStructure = esmResult.parsedStructure;
         isCandExperimental = false;
+        candidateSource = 'esmfold';
+        isSimulated = false;
         candChain = candStructure.chains[0] || 'A';
       } else {
         // Fallback: thread sequence on target template if compatible
@@ -858,6 +883,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
           candStructure = parsePdb(threadedPdb);
           isCandExperimental = false;
+          candidateSource = 'simulated';
+          isSimulated = true;
           candChain = candStructure.chains[0] || 'A';
         } catch (threadErr: any) {
           return res.status(400).json({
@@ -882,6 +909,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       sequence: cleanCandidate.replace(/[^A-Za-z]/g, '').toUpperCase(),
       structure: candStructure,
       isExperimental: isCandExperimental,
+      candidateSource,
+      isSimulated,
       chain: candChain,
       createdAtMs: Date.now(),
     });
@@ -941,6 +970,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           target_chain: targetChain,
           is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
           is_experimental_candidate: isCandExperimental,
+          candidate_source: candidateSource,
+          is_simulated: isSimulated,
         },
         alignment: {
           tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
@@ -1129,11 +1160,15 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
         let candStructure: ParsedStructure;
         let isCandExperimental = false;
+        let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = 'experimental';
+        let isSimulated = false;
         let candChain = cand.chain?.trim() || 'A';
 
         if (cleanCand.startsWith('ATOM') || cleanCand.startsWith('HEADER') || cleanCand.includes('_atom_site.')) {
           candStructure = cleanCand.includes('_atom_site.') ? parseMmcif(cleanCand) : parsePdb(cleanCand);
           isCandExperimental = true;
+          candidateSource = 'experimental';
+          isSimulated = false;
           candChain = candStructure.chains[0] || 'A';
         } else if (isValidPdbId(cleanCand)) {
           const pId = cleanCand.toUpperCase();
@@ -1145,6 +1180,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             const txt = await r.text();
             candStructure = parsePdb(txt);
             isCandExperimental = true;
+            candidateSource = 'experimental';
+            isSimulated = false;
             candChain = candStructure.chains[0] || 'A';
           } catch (err: any) {
             throw new Error(`후보 '${candName}' PDB '${pId}'를 불러오지 못했습니다: ${err.message || err}`);
@@ -1159,6 +1196,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           if (esmResult.success && esmResult.parsedStructure) {
             candStructure = esmResult.parsedStructure;
             isCandExperimental = false;
+            candidateSource = 'esmfold';
+            isSimulated = false;
             candChain = candStructure.chains[0] || 'A';
           } else {
             // Fallback: thread sequence on target template
@@ -1166,6 +1205,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
               const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
               candStructure = parsePdb(threadedPdb);
               isCandExperimental = false;
+              candidateSource = 'simulated';
+              isSimulated = true;
               candChain = candStructure.chains[0] || 'A';
             } catch (threadErr: any) {
               throw new Error(`후보 '${candName}' ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}).`);
@@ -1226,6 +1267,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
               target_chain: targetChain,
               is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
               is_experimental_candidate: isCandExperimental,
+                candidate_source: candidateSource,
+                is_simulated: isSimulated,
             },
             alignment: {
               tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,

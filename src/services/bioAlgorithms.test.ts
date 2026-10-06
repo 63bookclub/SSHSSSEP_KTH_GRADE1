@@ -367,3 +367,25 @@ describe('Candidate Input Validation', () => {
     expect(invalid.error).toContain('유효하지 않은 아미노산 문자가 포함되어 있습니다');
   });
 });
+
+describe('Candidate Structure Source Designation', () => {
+  it('should preserve candidateSource and isSimulated fields in evaluation autoSettings', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101], false, [0.25, 0.40, 0.20, 0.15]);
+    evalResult.autoSettings.candidateSource = 'simulated';
+    evalResult.autoSettings.isSimulated = true;
+
+    expect(evalResult.autoSettings.candidateSource).toBe('simulated');
+    expect(evalResult.autoSettings.isSimulated).toBe(true);
+  });
+});

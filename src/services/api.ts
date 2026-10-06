@@ -79,6 +79,8 @@ export interface JobResultData {
       target_chain: string;
       is_temporary_epitope?: boolean;
       is_experimental_candidate?: boolean;
+      candidate_source?: 'experimental' | 'alphafold' | 'esmfold' | 'simulated';
+      is_simulated?: boolean;
     };
     alignment: {
       tm_score_target_norm: number;

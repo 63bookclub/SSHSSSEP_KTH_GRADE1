@@ -1135,6 +1135,8 @@ export interface EvaluationResult {
     targetChain: string;
     isTemporaryEpitope: boolean;
     isExperimentalCandidate: boolean;
+    candidateSource?: 'experimental' | 'alphafold' | 'esmfold' | 'simulated';
+    isSimulated?: boolean;
     warnings?: string[];
   };
   alignment: {
