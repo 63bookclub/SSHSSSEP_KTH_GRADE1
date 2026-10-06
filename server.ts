@@ -378,12 +378,25 @@ app.post('/api/v1/epitopes', async (req, res) => {
     }
 
     // Fallback: If no epitope residues found or specified, automatically use surface exposed residues (RSA >= 0.2)
+    let fallbackReason: string | undefined = undefined;
     if (resolvedResidues.length === 0) {
       isTemporary = true;
+      if (method === 'manual') {
+        fallbackReason = '입력하신 수동 에피톱 범위에 해당하는 잔기가 타겟 구조에 존재하지 않거나 0개입니다.';
+      } else if (method === 'complex') {
+        fallbackReason = '복합체 PDB에서 추출된 항원-항체 접촉 잔기가 0개이거나 매핑에 실패했습니다.';
+      } else if (method === 'prediction_csv') {
+        fallbackReason = '예측 CSV 파싱 결과 설정된 임계값을 만족하는 잔기가 0개입니다.';
+      } else {
+        fallbackReason = '지정된 에피톱 잔기가 없어 표면 노출 잔기로 대체되었습니다.';
+      }
       const targetResList = target.structure.residuesByChain[target_chain] || [];
       resolvedResidues = targetResList
         .filter(r => (r.rsa ?? 0) >= 0.2)
         .map(r => r.resSeq);
+      if (resolvedResidues.length === 0) {
+        resolvedResidues = targetResList.map(r => r.resSeq);
+      }
     }
 
     const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
@@ -402,6 +415,8 @@ app.post('/api/v1/epitopes', async (req, res) => {
       is_temporary: isTemporary,
       residues_count: resolvedResidues.length,
       residues: resolvedResidues,
+      fallback_reason: fallbackReason,
+      warning: fallbackReason ? `[에피톱 입력 경고] ${fallbackReason} "표면 노출 잔기 임시 에피톱(RSA ≥ 0.2)" 모드로 자동으로 대체되었습니다.` : undefined,
       note: isTemporary ? '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)' : '사용자 정의 에피톱',
     });
   } catch (err: any) {
@@ -788,6 +803,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'temporary_rsa_fallback';
     let epitopeDescription = '';
 
+    let epitopeWarning: string | undefined = undefined;
     if (epitope_range && typeof epitope_range === 'string' && epitope_range.includes('-')) {
       const parts = epitope_range.split('-').map(s => parseInt(s.trim(), 10));
       if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
@@ -795,8 +811,12 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         epitopeResidueSeqs = targetResidues
           .filter(r => r.resSeq >= start && r.resSeq <= end)
           .map(r => r.resSeq);
-        epitopeMethod = 'manual';
-        epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+        if (epitopeResidueSeqs.length > 0) {
+          epitopeMethod = 'manual';
+          epitopeDescription = `지정 잔기 범위 (${start}-${end}, ${epitopeResidueSeqs.length}개)`;
+        } else {
+          epitopeWarning = `입력하신 에피톱 범위 (${epitope_range})에 해당하는 잔기가 타겟 체인에 없습니다.`;
+        }
       }
     }
 
@@ -972,6 +992,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           is_experimental_candidate: isCandExperimental,
           candidate_source: candidateSource,
           is_simulated: isSimulated,
+          epitope_warning: epitopeWarning,
         },
         alignment: {
           tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
