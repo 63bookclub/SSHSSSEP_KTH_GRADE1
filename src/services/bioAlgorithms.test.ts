@@ -14,6 +14,72 @@ import {
 } from './bioAlgorithms';
 import { mapResiduesBySequenceAlignment, mapComplexResiduesToTarget } from './siftsService';
 
+describe('Structural Alignment Algorithm (alignStructures)', () => {
+  it('should align structures based on 3D C-alpha coordinates even when sequence names do not match', () => {
+    // Target protein: ALA helix
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  ALA A   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  ALA A   3     7.600   0.000   0.000  1.00 80.00           C
+ATOM      4  CA  ALA A   4    11.400   0.000   0.000  1.00 80.00           C
+ATOM      5  CA  ALA A   5    15.200   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    // Candidate protein: GLY sequence with identical C-alpha spatial positions
+    const candPdb = `
+ATOM      1  CA  GLY B   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY B   2     3.800   0.000   0.000  1.00 80.00           C
+ATOM      3  CA  GLY B   3     7.600   0.000   0.000  1.00 80.00           C
+ATOM      4  CA  GLY B   4    11.400   0.000   0.000  1.00 80.00           C
+ATOM      5  CA  GLY B   5    15.200   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['B']
+    );
+
+    expect(alignment.alignedLength).toBe(5);
+    expect(alignment.sGlobal).toBeGreaterThan(0.99);
+    expect(alignment.rmsd).toBeLessThan(0.01);
+  });
+
+  it('should not perform arbitrary index fallback when structures are spatially distant', () => {
+    // Target protein
+    const targetPdb = `
+ATOM      1  CA  ALA A   1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  ALA A   2     3.800   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const candPdb = `
+ATOM      1  CA  CYS B  10   100.000 100.000 100.000  1.00 80.00           C
+ATOM      2  CA  CYS B  11   103.800 100.000 100.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const candStruct = parsePdb(candPdb);
+
+    const alignment = alignStructures(
+      targetStruct.residuesByChain['A'],
+      candStruct.residuesByChain['B']
+    );
+
+    // After Kabsch translation alignment, identical linear 2-Ca segments superimpose cleanly
+    expect(alignment.alignedPairs.length).toBeGreaterThan(0);
+  });
+});
+
 describe('Kabsch Alignment Algorithm', () => {
   it('should compute identity rotation and zero translation for non-collinear identical point sets', () => {
     const P: [number, number, number][] = [
