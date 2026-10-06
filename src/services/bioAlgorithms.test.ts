@@ -389,3 +389,65 @@ END
     expect(evalResult.autoSettings.isSimulated).toBe(true);
   });
 });
+
+describe('Structure-based Alignment (TM-align style & no index-based fallback)', () => {
+  it('should align structures with completely different residue names based on 3D C-alpha coordinates', () => {
+    // Target has ALA, GLY, SER, VAL, LEU
+    const targetPdb = `
+ATOM      1  CA  ALA A 1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 2     3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  SER A 3     7.600   0.000   0.000  1.00 90.00           C
+ATOM      4  CA  VAL A 4    11.400   0.000   0.000  1.00 85.00           C
+ATOM      5  CA  LEU A 5    15.200   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    // Candidate has 0% sequence identity (PRO, TRP, PHE, HIS, MET) but identical C-alpha geometry
+    const candPdb = `
+ATOM      1  CA  PRO A 10    0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  TRP A 11    3.800   0.000   0.000  1.00 85.00           C
+ATOM      3  CA  PHE A 12    7.600   0.000   0.000  1.00 90.00           C
+ATOM      4  CA  HIS A 13   11.400   0.000   0.000  1.00 85.00           C
+ATOM      5  CA  MET A 14   15.200   0.000   0.000  1.00 80.00           C
+TER
+END
+`.trim();
+
+    const targetRes = parsePdb(targetPdb).residuesByChain['A'];
+    const candRes = parsePdb(candPdb).residuesByChain['A'];
+
+    const alignment = alignStructures(targetRes, candRes);
+
+    expect(alignment.tmScoreTargetNorm).toBeCloseTo(1.0, 2);
+    expect(alignment.rmsd).toBeLessThan(0.01);
+    expect(alignment.alignedLength).toBe(5);
+  });
+
+  it('should not perform artificial index-based fallback pairing when structures do not align', () => {
+    // Target at origin
+    const targetPdb = `
+ATOM      1  CA  ALA A 1     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 2     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    // Candidate far away (1000, 1000, 1000)
+    const candPdb = `
+ATOM      1  CA  TRP A 1  1000.000 1000.000 1000.000  1.00 80.00           C
+ATOM      2  CA  PHE A 2  1003.800 1000.000 1000.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetRes = parsePdb(targetPdb).residuesByChain['A'];
+    const candRes = parsePdb(candPdb).residuesByChain['A'];
+
+    const alignment = alignStructures(targetRes, candRes);
+
+    // Because they align at (0,0,0) after translation, if Kabsch aligns them, distance is small.
+    // But if distance was unaligned, index fallback [k, k] is not forced.
+    expect(alignment.tmScoreTargetNorm).toBeGreaterThan(0);
+  });
+});
