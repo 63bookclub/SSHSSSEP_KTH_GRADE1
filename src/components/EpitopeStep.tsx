@@ -31,28 +31,31 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [epitopeResult, setEpitopeResult] = useState<EpitopeResponse | null>(currentEpitope || null);
 
-  const handleApplyEpitope = async (allowEmpty = false) => {
+  const handleApplyEpitope = async (useTemporaryRsa = false) => {
     setLoading(true);
     setError(null);
     try {
       const payload: any = {
         target_id: targetData.target_id,
         target_chain: selectedChain,
-        method,
+        method: useTemporaryRsa ? 'temporary_rsa' : method,
         combination_mode: combinationMode,
         additional_ranges: additionalRange,
+        allow_temporary: useTemporaryRsa,
       };
 
-      if (method === 'manual') {
-        payload.manual_range = allowEmpty ? '' : manualRange;
-      } else if (method === 'complex') {
-        payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
-        payload.antibody_chains = antibodyChains;
-        payload.antigen_chain = antigenChain || selectedChain;
-        payload.manual_range = manualRange;
-      } else if (method === 'prediction_csv') {
-        payload.prediction_csv_text = csvText;
-        payload.threshold = threshold;
+      if (!useTemporaryRsa) {
+        if (method === 'manual') {
+          payload.manual_range = manualRange;
+        } else if (method === 'complex') {
+          payload.complex_pdb_id = complexPdbId.trim().toUpperCase();
+          payload.antibody_chains = antibodyChains;
+          payload.antigen_chain = antigenChain || selectedChain;
+          payload.manual_range = manualRange;
+        } else if (method === 'prediction_csv') {
+          payload.prediction_csv_text = csvText;
+          payload.threshold = threshold;
+        }
       }
 
       const res = await submitEpitope(payload);

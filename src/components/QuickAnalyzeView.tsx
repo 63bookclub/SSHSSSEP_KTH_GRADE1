@@ -413,7 +413,7 @@ export const QuickAnalyzeView: React.FC<QuickAnalyzeViewProps> = ({
         {/* Submit Execution Button */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-[11px] text-slate-500">
-            <span>알고리즘: US-align / TM-align Cα 좌표 중첩 및 3Dmol.js 3D 겹침 시각화</span>
+            <span>알고리즘: TM-score 근사 구현 (Kabsch Cα 좌표 중첩 및 3Dmol.js 3D 겹침 시각화)</span>
           </div>
 
           <button

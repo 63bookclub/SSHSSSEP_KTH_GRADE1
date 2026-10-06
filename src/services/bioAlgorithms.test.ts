@@ -455,3 +455,47 @@ END
     expect(evalResult.autoSettings.isSimulated).toBe(true);
   });
 });
+
+describe('Epitope Selection & Engine Version Metadata Tests', () => {
+  it('should include "TM-score 근사 구현" in SSBD-Engine tool version metadata', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101], false);
+
+    expect(evalResult.reproducibility.toolVersions).toBeDefined();
+    expect(evalResult.reproducibility.toolVersions!['SSBD-Engine']).toBe('1.0.0 (TM-score 근사 구현)');
+  });
+
+  it('should correctly flag temporary epitope when temporary_rsa_fallback method is passed', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    const evalResult = evaluateAntigenicMimicry(
+      alignment,
+      [100, 101],
+      false,
+      undefined,
+      'temporary_rsa_fallback'
+    );
+
+    expect(evalResult.autoSettings.isTemporaryEpitope).toBe(true);
+    expect(evalResult.autoSettings.epitopeSource).toBe('temporary_rsa_fallback');
+  });
+});
