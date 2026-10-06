@@ -233,7 +233,7 @@ export function generateReportHtml(
     </div>
     <div style="text-align: right; font-size: 10.5px; color: #64748b;">
       <div><strong>분석 일시:</strong> ${timestamp.substring(0, 19).replace('T', ' ')} UTC</div>
-      <div><strong>분석 엔진:</strong> SSBD Core v1.0.0 (Kabsch + TM-align + SASA)</div>
+      <div><strong>분석 엔진:</strong> SSBD Core v1.0.0 (Kabsch + TM-score 근사 구현 + SASA)</div>
     </div>
   </div>
 

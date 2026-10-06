@@ -22,7 +22,7 @@ export interface TargetResponse {
 export interface EpitopeSubmission {
   target_id: string;
   target_chain: string;
-  method: 'manual' | 'complex' | 'prediction_csv';
+  method: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback';
   manual_range?: string;
   complex_pdb_id?: string;
   antigen_chain?: string;
@@ -31,6 +31,7 @@ export interface EpitopeSubmission {
   threshold?: number;
   combination_mode?: 'single' | 'union' | 'intersect';
   additional_ranges?: string;
+  allow_temporary_fallback?: boolean;
 }
 
 export interface EpitopeResponse {
@@ -39,6 +40,7 @@ export interface EpitopeResponse {
   is_temporary: boolean;
   residues_count: number;
   residues: (number | string)[];
+  fallback_reason?: string;
   note: string;
 }
 

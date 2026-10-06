@@ -1553,7 +1553,7 @@ export function evaluateAntigenicMimicry(
     residues: residueList,
     reproducibility: {
       toolVersions: {
-        'SSBD-Engine': '1.0.0 (TM-score approximation algorithm)',
+        'SSBD-Engine': '1.0.0 (TM-score 근사 구현 알고리즘)',
         'SASA-Engine': 'Shrake-Rupley 96-pt sphere numerical integration',
       },
       databaseVersions: {

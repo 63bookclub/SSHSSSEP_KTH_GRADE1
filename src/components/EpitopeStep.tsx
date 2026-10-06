@@ -320,6 +320,17 @@ export const EpitopeStep: React.FC<EpitopeStepProps> = ({
                     </span>
                   )}
                 </div>
+                {epitopeResult.is_temporary && epitopeResult.fallback_reason && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex items-start space-x-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <strong>에피톱 자동 대체 발생 원인:</strong> {epitopeResult.fallback_reason}
+                      <p className="mt-0.5 text-[11px] text-amber-200/80">
+                        입력조건으로 잔기가 지정되지 않아 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-1.5 flex flex-wrap gap-1 max-h-20 overflow-y-auto pr-1">
                   {epitopeResult.residues.slice(0, 45).map((r) => (
                     <span
