@@ -1318,9 +1318,14 @@ export function evaluateAntigenicMimicry(
     warnings.push(`지정된 에피톱 잔기 중 타겟 구조에 존재하지 않는 잔기 (${nonExistentResidues.join(', ')}) ${nonExistentResidues.length}개가 제외되었습니다.`);
   }
 
-  // Fallback check: if valid epitope set is empty, auto-populate with RSA >= 0.2
+  // Fallback check: if valid epitope set is empty
   let isTemporary = false;
   if (validEpitopeSet.size === 0) {
+    if (epitopeSource !== 'temporary_rsa_fallback' && rawEpitopeSet.size > 0) {
+      throw new Error(
+        `지정된 에피톱 잔기 중 타겟 체인(${targetChain}) 구조 내에 존재하는 유효 잔기가 0개입니다. 잔기 번호 또는 체인을 확인해 주세요.`
+      );
+    }
     isTemporary = true;
     targetResidues
       .filter(r => (r.rsa || 0) >= 0.2)
@@ -1328,7 +1333,7 @@ export function evaluateAntigenicMimicry(
     if (validEpitopeSet.size === 0) {
       targetResidues.forEach(r => validEpitopeSet.add(r.resKey || getResidueKey(r.resSeq, r.iCode)));
     }
-    warnings.push('유효한 에피톱 잔기가 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 자동 적용하였습니다.');
+    warnings.push('지정된 에피톱이 없어 표면 노출 잔기(RSA ≥ 0.2)를 임시 에피톱으로 적용하였습니다.');
   }
 
   const effectiveEpitopeSet = validEpitopeSet;
