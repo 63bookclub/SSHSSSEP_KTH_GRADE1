@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
+import { getFitnessGrade } from '../services/gradeService.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -28,14 +29,19 @@ export function generateReportHtml(
     candidateSourceLabel = '실험 결정 구조 (PDB)';
   }
 
+  const gradeRes = getFitnessGrade(dynamicScore, {
+    isTemporaryEpitope: result.auto_settings.is_temporary_epitope,
+    isSimulatedStructure: isSimulated,
+  });
+
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
-  if (dynamicScore >= 75.0) {
+  if (gradeRes.level === 'HIGH') {
     gradeLabel = '높음 (High Mimicry)';
     gradeColor = '#059669';
     gradeBg = '#d1fae5';
-  } else if (dynamicScore >= 50.0) {
+  } else if (gradeRes.level === 'MEDIUM') {
     gradeLabel = '중간 (Moderate Mimicry)';
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';

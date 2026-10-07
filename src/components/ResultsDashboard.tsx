@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { JobResultData, fetchAiInsight } from '../services/api.ts';
 import { StructureViewer } from './StructureViewer.tsx';
+import { getFitnessGrade } from '../services/gradeService.ts';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
