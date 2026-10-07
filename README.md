@@ -238,5 +238,5 @@ npm run start
 ---
 
 **개발 및 운영**: 2026 SSEP_TEAM SSBD(씁뜩)  
-**문의 및 기술 지원**: kimtaehohandsome@gmail.com  
+**문의 및 기술 지원**: kimtaehogobaduk@naver.com
 **라이선스**: MIT License
