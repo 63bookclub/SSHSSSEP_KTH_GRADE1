@@ -193,7 +193,7 @@ export async function resolveEpitopeInput(
           if (fbResp.ok) {
             complexText = await fbResp.text();
           } else {
-            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (${fbResp.status})`);
+            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (상태 코드: ${fbResp.status})`);
           }
         }
       } finally {
