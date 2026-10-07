@@ -28,6 +28,7 @@ import {
   validateAminoAcidSequence,
   validateAndNormalizeWeights,
 } from './src/utils/validation.ts';
+import { resolveTargetChain, resolveCandidateChain } from './src/services/chainService.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -276,7 +277,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
   try {
     const {
       target_id,
-      target_chain = 'A',
+      target_chain: reqTargetChain,
       method = 'manual',
       manual_range,
       complex_pdb_id,
@@ -294,9 +295,16 @@ app.post('/api/v1/epitopes', async (req, res) => {
       return res.status(404).json({ error: '지정된 target_id를 찾을 수 없습니다.' });
     }
 
+    let targetChain = '';
+    try {
+      targetChain = resolveTargetChain(target.chains, reqTargetChain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
+    }
+
     const epitopeResult = await resolveEpitopeInput({
       targetStructure: target.structure,
-      targetChain: target_chain,
+      targetChain: targetChain,
       method,
       manualRange: manual_range,
       complexPdbId: complex_pdb_id,
@@ -336,7 +344,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
 // 4. POST /api/v1/candidates
 app.post('/api/v1/candidates', async (req, res) => {
   try {
-    const { sequence, fasta_text, raw_pdb, filename, is_experimental } = req.body;
+    const { sequence, fasta_text, raw_pdb, filename, is_experimental, chain: reqChain } = req.body;
     let structureText = '';
     let parsedSeq = '';
     let isExperimental = !!is_experimental;
@@ -386,7 +394,12 @@ app.post('/api/v1/candidates', async (req, res) => {
       return res.status(400).json({ error: '후보 물질 구조 파싱에 실패했습니다. 유효한 PDB 좌표인지 확인해 주세요.' });
     }
 
-    const candChain = structure.chains[0];
+    let candChain = '';
+    try {
+      candChain = resolveCandidateChain(structure.chains, reqChain, filename);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
+    }
     const resList = structure.residuesByChain[candChain] || [];
     const allCandResidues = Object.values(structure.residuesByChain).flat();
     if (resList.length > 0) {
@@ -425,7 +438,7 @@ app.post('/api/v1/candidates', async (req, res) => {
 // 5. POST /api/v1/jobs
 app.post('/api/v1/jobs', async (req, res) => {
   try {
-    const { target_id, candidate_id, epitope_id, target_chain = 'A', weights } = req.body;
+    const { target_id, candidate_id, epitope_id, target_chain: reqTargetChain, candidate_chain: reqCandChain, weights } = req.body;
 
     const target = targetsStore.get(target_id);
     const candidate = candidatesStore.get(candidate_id);
@@ -434,6 +447,20 @@ app.post('/api/v1/jobs', async (req, res) => {
     if (!target) return res.status(404).json({ error: '타겟 구조를 찾을 수 없습니다.' });
     if (!candidate) return res.status(404).json({ error: '후보 구조를 찾을 수 없습니다.' });
     if (!epitope) return res.status(404).json({ error: '에피톱 정보를 찾을 수 없습니다.' });
+
+    let target_chain = '';
+    try {
+      target_chain = resolveTargetChain(target.chains, reqTargetChain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
+    }
+
+    let candChain = '';
+    try {
+      candChain = resolveCandidateChain(candidate.structure.chains, reqCandChain || candidate.chain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
+    }
 
     const weightValidation = validateAndNormalizeWeights(weights);
     if (!weightValidation.isValid) {
@@ -444,7 +471,7 @@ app.post('/api/v1/jobs', async (req, res) => {
     const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
 
     const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
-    const candResidues = candidate.structure.residuesByChain[candidate.chain] || Object.values(candidate.structure.residuesByChain)[0] || [];
+    const candResidues = candidate.structure.residuesByChain[candChain] || Object.values(candidate.structure.residuesByChain)[0] || [];
 
     if (targetResidues.length === 0) {
       return res.status(400).json({ error: `타겟 체인 ${target_chain}에 잔기가 없습니다.` });
@@ -489,7 +516,7 @@ app.post('/api/v1/jobs', async (req, res) => {
           epitopeMethod: epitope.method,
           targetChain: target_chain,
           candidateStructure: candidate.structure,
-          candidateChain: candidate.chain,
+          candidateChain: candChain,
         },
       }
     );
@@ -681,13 +708,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       if (resList.length > 0) calculateSASA(resList, 1.4, 96, allTargetAssemblyResidues);
     }
 
-    // Determine target chain
-    let targetChain = reqTargetChain?.trim() || '';
-    if (!targetChain || !targetStructure.chains.includes(targetChain)) {
-      // Default to 'E' if present (e.g. 6M0J Spike RBD), else 'A', else first chain
-      if (targetStructure.chains.includes('E')) targetChain = 'E';
-      else if (targetStructure.chains.includes('A')) targetChain = 'A';
-      else targetChain = targetStructure.chains[0];
+    let targetChain = '';
+    try {
+      targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
     }
 
     const targetResidues = targetStructure.residuesByChain[targetChain] || [];
@@ -761,7 +786,6 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       isCandExperimental = true;
       candidateSource = 'experimental';
       isSimulated = false;
-      candChain = candStructure.chains[0] || 'A';
     } else if (isValidPdbId(cleanCandidate)) {
       const candId = cleanCandidate.toUpperCase();
       try {
@@ -774,7 +798,6 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         isCandExperimental = true;
         candidateSource = 'experimental';
         isSimulated = false;
-        candChain = candStructure.chains[0] || 'A';
       } catch (err: any) {
         return res.status(400).json({
           error: `후보 PDB '${candId}'를 불러오지 못했습니다: ${err.message || err}`,
@@ -792,7 +815,6 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         isCandExperimental = false;
         candidateSource = 'esmfold';
         isSimulated = false;
-        candChain = candStructure.chains[0] || 'A';
       } else {
         // Fallback: thread sequence on target template if compatible
         try {
@@ -801,13 +823,18 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           isCandExperimental = false;
           candidateSource = 'simulated';
           isSimulated = true;
-          candChain = candStructure.chains[0] || 'A';
         } catch (threadErr: any) {
           return res.status(400).json({
             error: `ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}). 유효한 3D PDB 파일이나 PDB ID를 업로드해 주세요.`,
           });
         }
       }
+    }
+
+    try {
+      candChain = resolveCandidateChain(candStructure.chains, reqCandidateChain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
     }
 
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
@@ -1001,7 +1028,12 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       return res.status(400).json({ error: '유효하지 않은 타겟 입력입니다. 타겟은 PDB/mmCIF 구조 파일, PDB ID 또는 UniProt ID만 지원됩니다.' });
     }
 
-    const targetChain = reqTargetChain?.trim() || targetStructure.chains[0] || 'A';
+    let targetChain = '';
+    try {
+      targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
+    } catch (chainErr: any) {
+      return res.status(400).json({ error: chainErr.message });
+    }
     const targetResidues = targetStructure.residuesByChain[targetChain] || Object.values(targetStructure.residuesByChain)[0] || [];
     const allTargetBatchResidues = Object.values(targetStructure.residuesByChain).flat();
     calculateSASA(targetResidues, 1.4, 96, allTargetBatchResidues);
@@ -1091,7 +1123,6 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           isCandExperimental = true;
           candidateSource = 'experimental';
           isSimulated = false;
-          candChain = candStructure.chains[0] || 'A';
         } else if (isValidPdbId(cleanCand)) {
           const pId = cleanCand.toUpperCase();
           try {
@@ -1104,7 +1135,6 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             isCandExperimental = true;
             candidateSource = 'experimental';
             isSimulated = false;
-            candChain = candStructure.chains[0] || 'A';
           } catch (err: any) {
             throw new Error(`후보 '${candName}' PDB '${pId}'를 불러오지 못했습니다: ${err.message || err}`);
           }
@@ -1120,7 +1150,6 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             isCandExperimental = false;
             candidateSource = 'esmfold';
             isSimulated = false;
-            candChain = candStructure.chains[0] || 'A';
           } else {
             // Fallback: thread sequence on target template
             try {
@@ -1129,11 +1158,16 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
               isCandExperimental = false;
               candidateSource = 'simulated';
               isSimulated = true;
-              candChain = candStructure.chains[0] || 'A';
             } catch (threadErr: any) {
               throw new Error(`후보 '${candName}' ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}).`);
             }
           }
+        }
+
+        try {
+          candChain = resolveCandidateChain(candStructure.chains, cand.chain, candName);
+        } catch (chainErr: any) {
+          throw new Error(chainErr.message);
         }
 
         const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
