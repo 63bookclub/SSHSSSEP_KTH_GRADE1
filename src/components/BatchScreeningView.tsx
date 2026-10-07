@@ -23,6 +23,7 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { getFitnessScoreGrade, SCORING_GRADE_THRESHOLDS } from '../services/bioAlgorithms.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -359,9 +360,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
         return [idx + 1, r.candidate_name, r.candidate_id, r.status, 'FAILED', '', '', '', '', '', '', '', ''];
       }
       const score = d.final_fitness_score ?? 0;
-      let grade = 'LOW';
-      if (score >= 75) grade = 'HIGH';
-      else if (score >= 50) grade = 'MODERATE';
+      const grade = score >= SCORING_GRADE_THRESHOLDS.HIGH ? 'HIGH' : score >= SCORING_GRADE_THRESHOLDS.MODERATE ? 'MODERATE' : 'LOW';
 
       return [
         idx + 1,
@@ -728,15 +727,9 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const score = d.final_fitness_score ?? 0;
-                  let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
-                  let gradeText = '낮음 (Low)';
-                  if (score >= 75) {
-                    gradeBg = 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
-                    gradeText = '높음 (High)';
-                  } else if (score >= 50) {
-                    gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
-                    gradeText = '중간 (Mod)';
-                  }
+                  const gInfo = getFitnessScoreGrade(score);
+                  const gradeBg = `${gInfo.badgeBg} bg-opacity-60`;
+                  const gradeText = gInfo.level;
 
                   const isRank1 = idx === 0;
 

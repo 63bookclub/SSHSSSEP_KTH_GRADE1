@@ -790,11 +790,18 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       const candId = cleanCandidate.toUpperCase();
       try {
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
-        if (!r.ok) {
-          throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
+        if (r.ok) {
+          const txt = await r.text();
+          candStructure = parsePdb(txt);
+        } else {
+          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.cif`);
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            candStructure = parseMmcif(txt);
+          } else {
+            throw new Error(`PDB ${candId} 다운로드 실패 (PDB HTTP ${r.status}, CIF HTTP ${cifRes.status})`);
+          }
         }
-        const txt = await r.text();
-        candStructure = parsePdb(txt);
         isCandExperimental = true;
         candidateSource = 'experimental';
         isSimulated = false;
@@ -1127,11 +1134,18 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           const pId = cleanCand.toUpperCase();
           try {
             const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
-            if (!r.ok) {
-              throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
+            if (r.ok) {
+              const txt = await r.text();
+              candStructure = parsePdb(txt);
+            } else {
+              const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.cif`);
+              if (cifRes.ok) {
+                const txt = await cifRes.text();
+                candStructure = parseMmcif(txt);
+              } else {
+                throw new Error(`PDB ${pId} 다운로드 실패 (PDB HTTP ${r.status}, CIF HTTP ${cifRes.status})`);
+              }
             }
-            const txt = await r.text();
-            candStructure = parsePdb(txt);
             isCandExperimental = true;
             candidateSource = 'experimental';
             isSimulated = false;

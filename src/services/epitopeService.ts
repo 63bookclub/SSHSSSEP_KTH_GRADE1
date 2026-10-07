@@ -177,6 +177,7 @@ export async function resolveEpitopeInput(
 
     try {
       const cleanPdbId = complexPdbId.trim().toUpperCase();
+      const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
       const cifUrl = `https://files.rcsb.org/download/${cleanPdbId}.cif`;
 
       const controller = new AbortController();
@@ -184,16 +185,15 @@ export async function resolveEpitopeInput(
 
       let complexText = '';
       try {
-        const resp = await fetch(cifUrl, { signal: controller.signal });
+        const resp = await fetch(pdbUrl, { signal: controller.signal });
         if (resp.ok) {
           complexText = await resp.text();
         } else {
-          const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
-          const fbResp = await fetch(pdbUrl, { signal: controller.signal });
+          const fbResp = await fetch(cifUrl, { signal: controller.signal });
           if (fbResp.ok) {
             complexText = await fbResp.text();
           } else {
-            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (${fbResp.status})`);
+            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (PDB HTTP ${resp.status}, CIF HTTP ${fbResp.status})`);
           }
         }
       } finally {
