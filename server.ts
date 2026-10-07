@@ -145,6 +145,33 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
+// Helper to download PDB or mmCIF structure from RCSB with strict r.ok check
+async function fetchStructureFromRcsb(
+  pdbId: string,
+  timeoutMs = 12000
+): Promise<{ text: string; format: 'pdb' | 'cif' }> {
+  const cleanId = pdbId.trim().toUpperCase();
+  const pdbUrl = `https://files.rcsb.org/download/${cleanId}.pdb`;
+  const pdbRes = await fetchWithTimeout(pdbUrl, {}, timeoutMs);
+
+  if (pdbRes.ok) {
+    const text = await pdbRes.text();
+    return { text, format: 'pdb' };
+  }
+
+  const cifUrl = `https://files.rcsb.org/download/${cleanId}.cif`;
+  const cifRes = await fetchWithTimeout(cifUrl, {}, timeoutMs);
+
+  if (cifRes.ok) {
+    const text = await cifRes.text();
+    return { text, format: 'cif' };
+  }
+
+  throw new Error(
+    `RCSB PDB에서 구조 '${cleanId}'를 다운로드할 수 없습니다 (HTTP status: .pdb=${pdbRes.status}, .cif=${cifRes.status}). PDB ID를 확인하거나 PDB/mmCIF 파일을 직접 업로드해 주세요.`
+  );
+}
+
 // -------------------------------------------------------------
 // REST API v1 Endpoints (as defined in Section 8)
 // -------------------------------------------------------------
@@ -197,23 +224,11 @@ app.post('/api/v1/targets', async (req, res) => {
       sourceType = 'pdb';
       identifier = pdb_id.trim().toUpperCase();
       try {
-        const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
-        const rcsbRes = await fetchWithTimeout(pdbUrl);
-        if (rcsbRes.ok) {
-          structureText = await rcsbRes.text();
-        } else {
-          // Fallback to .cif
-          const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
-          const cifRes = await fetchWithTimeout(cifUrl);
-          if (cifRes.ok) {
-            structureText = await cifRes.text();
-          } else {
-            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다.`);
-          }
-        }
+        const fetched = await fetchStructureFromRcsb(identifier);
+        structureText = fetched.text;
       } catch (rcsbErr: any) {
         return res.status(400).json({
-          error: `RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}. 네트워크 상태를 확인하거나 PDB 파일을 직접 업로드해 주세요.`,
+          error: `RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}`,
         });
       }
     } else if (raw_content) {
@@ -661,14 +676,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetIdentifier = cleanTarget.toUpperCase();
       targetSourceType = 'pdb';
       try {
-        const pdbRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.pdb`);
-        if (pdbRes.ok) {
-          targetPdbText = await pdbRes.text();
-        } else {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
-          if (cifRes.ok) targetPdbText = await cifRes.text();
-          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
-        }
+        const fetched = await fetchStructureFromRcsb(targetIdentifier);
+        targetPdbText = fetched.text;
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
       }
@@ -789,12 +798,8 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     } else if (isValidPdbId(cleanCandidate)) {
       const candId = cleanCandidate.toUpperCase();
       try {
-        const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
-        if (!r.ok) {
-          throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
-        }
-        const txt = await r.text();
-        candStructure = parsePdb(txt);
+        const fetched = await fetchStructureFromRcsb(candId);
+        candStructure = fetched.format === 'cif' ? parseMmcif(fetched.text) : parsePdb(fetched.text);
         isCandExperimental = true;
         candidateSource = 'experimental';
         isSimulated = false;
@@ -983,19 +988,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       targetIdentifier = pdbId;
       targetSourceType = 'pdb';
       try {
-        const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.pdb`);
-        if (r.ok) {
-          const txt = await r.text();
-          targetStructure = parsePdb(txt);
-        } else {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
-          if (cifRes.ok) {
-            const txt = await cifRes.text();
-            targetStructure = parseMmcif(txt);
-          } else {
-            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다.` });
-          }
-        }
+        const fetched = await fetchStructureFromRcsb(pdbId);
+        targetStructure = fetched.format === 'cif' ? parseMmcif(fetched.text) : parsePdb(fetched.text);
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB 타겟 조회 실패 (${pdbId}): ${err.message || err}` });
       }
@@ -1126,12 +1120,8 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         } else if (isValidPdbId(cleanCand)) {
           const pId = cleanCand.toUpperCase();
           try {
-            const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
-            if (!r.ok) {
-              throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
-            }
-            const txt = await r.text();
-            candStructure = parsePdb(txt);
+            const fetched = await fetchStructureFromRcsb(pId);
+            candStructure = fetched.format === 'cif' ? parseMmcif(fetched.text) : parsePdb(fetched.text);
             isCandExperimental = true;
             candidateSource = 'experimental';
             isSimulated = false;

@@ -1471,9 +1471,20 @@ export function evaluateAntigenicMimicry(
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
   // Rule-based deterministic deeply detailed scientific rationale (100% reproducible for science fair / thesis)
-  let level = '낮음 (Low)';
-  if (finalFitnessScore >= 75.0) level = '높음 (High)';
-  else if (finalFitnessScore >= 50.0) level = '중간 (Moderate)';
+  let levelBase = '낮음 (Low)';
+  if (finalFitnessScore >= 75.0) levelBase = '높음 (High)';
+  else if (finalFitnessScore >= 50.0) levelBase = '중간 (Moderate)';
+
+  let levelQualification = '';
+  if (isTemporary && !isExperimentalCandidate) {
+    levelQualification = ' (참고용 - 임시 에피톱·예측 구조)';
+  } else if (isTemporary) {
+    levelQualification = ' (참고용 - 임시 에피톱)';
+  } else if (!isExperimentalCandidate) {
+    levelQualification = ' (참고용 - 예측 구조)';
+  }
+
+  const level = `${levelBase}${levelQualification}`;
 
   const validEpiDists = epiDistances.filter(d => d < 50);
   const epiDistMean = validEpiDists.length > 0
@@ -1503,7 +1514,9 @@ export function evaluateAntigenicMimicry(
   const highConfPercent = Math.round(sConf * 100);
 
   const rationaleSections: string[] = [
-    `【1. 종합 판정 요약】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}]\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개`,
+    `【1. 종합 판정 요약】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}]\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개` +
+    `\n• 등급 평가 기준: 75점 이상 '높음 (High)', 50점 이상 '중간 (Moderate)', 50점 미만 '낮음 (Low)' (※ Cα 입체 좌표 중첩 및 에피톱 결합면 형태학적 일치도 기준)` +
+    (levelQualification ? `\n• 등급 보정 안내: 본 결과는 임시 에피톱(표면 노출 잔기) 또는 인코딩/예측 3D 구조를 기반으로 계산되어 정밀 실험 검증 전 가늠용 참고 등급으로 적용되었습니다.` : ''),
 
     `\n【2. 전체 골격 위상 및 3D 접힘 구조 정렬 (S_global = ${(sGlobal * 100).toFixed(1)}%)】\n• TM-score: 타겟 기준 ${tmScoreTargetNorm.toFixed(4)}, 후보 기준 ${tmScoreCandNorm.toFixed(4)} (Zhang & Skolnick 기준: TM > 0.5일 때 동일한 단백질 슈퍼패밀리 폴딩 구조 형성 확인)\n• Cα 중첩 RMSD: ${rmsd.toFixed(2)} Å (정렬된 잔기: ${alignedLength}개 / 서열 정렬 커버리지: ${(coverage * 100).toFixed(1)}%)\n• 백본 구조적 해석: ${sGlobal >= 0.7 ? '타겟 항원의 주쇄 2차 구조(Alpha-helix/Beta-sheet) 배열이 후보 물질과 높은 위상학적 일치도를 보입니다.' : '일부 코어 또는 도메인 접힘에서 국소적인 변형 및 루프 회전이 존재합니다.'}`,
 
