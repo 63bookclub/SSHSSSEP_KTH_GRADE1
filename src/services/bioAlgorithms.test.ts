@@ -454,4 +454,19 @@ END
     expect(evalResult.autoSettings.candidateSource).toBe('simulated');
     expect(evalResult.autoSettings.isSimulated).toBe(true);
   });
+
+  it('should include grade criteria documentation in evaluationRationale', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A   1      0.000   0.000   0.000  1.00 90.00           C
+ATOM      2  CA  GLY A   2      3.800   0.000   0.000  1.00 90.00           C
+END
+`.trim();
+
+    const tStruct = parsePdb(targetPdb);
+    const align = alignStructures(tStruct.residuesByChain['A'], tStruct.residuesByChain['A']);
+    const evalRes = evaluateAntigenicMimicry(align, [1, 2], true, [0.25, 0.4, 0.2, 0.15], 'manual', 'A');
+
+    expect(evalRes.evaluationRationale).toContain('75점 이상(높음');
+    expect(evalRes.evaluationRationale).toContain('50점 이상(중간');
+  });
 });
