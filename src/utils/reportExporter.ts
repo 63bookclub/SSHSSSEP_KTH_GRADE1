@@ -31,14 +31,21 @@ export function generateReportHtml(
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
-  if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
+
+  if (isSimulated) {
+    gradeLabel = '등급 보류 (Simulated Demo Structure)';
+    gradeColor = '#e11d48';
+    gradeBg = '#ffe4e6';
+  } else if (dynamicScore >= 75.0) {
+    gradeLabel = result.auto_settings.is_temporary_epitope ? '높음 (High Mimicry - 임시 에피톱)' : '높음 (High Mimicry)';
     gradeColor = '#059669';
     gradeBg = '#d1fae5';
   } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
+    gradeLabel = result.auto_settings.is_temporary_epitope ? '중간 (Moderate Mimicry - 임시 에피톱)' : '중간 (Moderate Mimicry)';
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';
+  } else if (result.auto_settings.is_temporary_epitope) {
+    gradeLabel = '낮음 (Low Mimicry - 임시 에피톱)';
   }
 
   const residueRows = residues
