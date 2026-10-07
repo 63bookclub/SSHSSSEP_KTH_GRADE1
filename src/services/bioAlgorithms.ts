@@ -1475,6 +1475,14 @@ export function evaluateAntigenicMimicry(
   if (finalFitnessScore >= 75.0) level = '높음 (High)';
   else if (finalFitnessScore >= 50.0) level = '중간 (Moderate)';
 
+  if (isTemporary || isExperimentalCandidate === false) {
+    if (isTemporary && isExperimentalCandidate === false) {
+      level += ' [주의: 임시 에피톱 & 예측 구조 (추정 등급)]';
+    } else if (isTemporary) {
+      level += ' [주의: 임시 에피톱 적용 (추정 등급)]';
+    }
+  }
+
   const validEpiDists = epiDistances.filter(d => d < 50);
   const epiDistMean = validEpiDists.length > 0
     ? (validEpiDists.reduce((a, b) => a + b, 0) / validEpiDists.length).toFixed(2)

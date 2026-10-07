@@ -70,12 +70,25 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + normW[3] * sConf) * 100
   ) / 100;
 
-  // Score grade
+  // Score grade handling simulated model & temporary epitope
+  const isSimulated = result.auto_settings.is_simulated || result.auto_settings.candidate_source === 'simulated';
+  const isTempEpi = result.auto_settings.is_temporary_epitope;
+
   let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-  if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+  if (isSimulated) {
+    gradeBadge = { label: '등급보류 (Simulated Demo Model)', bg: 'bg-rose-950/80 text-rose-200 border-rose-500' };
+  } else if (dynamicScore >= 75.0) {
+    gradeBadge = {
+      label: isTempEpi ? '높음 (High - 임시 에피톱)' : '높음 (High)',
+      bg: 'bg-emerald-950 text-emerald-300 border-emerald-800',
+    };
   } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
+    gradeBadge = {
+      label: isTempEpi ? '중간 (Moderate - 임시 에피톱)' : '중간 (Moderate)',
+      bg: 'bg-amber-950 text-amber-300 border-amber-800',
+    };
+  } else if (isTempEpi) {
+    gradeBadge = { label: '낮음 (Low - 임시 에피톱)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
   }
 
   // Generate AI Insight handler

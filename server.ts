@@ -173,7 +173,7 @@ app.post('/api/v1/targets', async (req, res) => {
         const afMetaUrl = `https://alphafold.ebi.ac.uk/api/prediction/${identifier}`;
         const metaRes = await fetchWithTimeout(afMetaUrl);
         if (!metaRes.ok) {
-          throw new Error(`AlphaFold DB에서 해당 UniProt ID (${identifier})를 찾을 수 없습니다.`);
+          throw new Error(`AlphaFold DB에서 해당 UniProt ID (${identifier})를 찾을 수 없습니다. (HTTP status: ${metaRes.status})`);
         }
         const metaData = await metaRes.json();
         const entry = Array.isArray(metaData) ? metaData[0] : metaData;
@@ -183,7 +183,7 @@ app.post('/api/v1/targets', async (req, res) => {
         }
 
         const fileRes = await fetchWithTimeout(fileUrl);
-        if (!fileRes.ok) throw new Error('AlphaFold 구조 파일 다운로드 실패');
+        if (!fileRes.ok) throw new Error(`AlphaFold 구조 파일 다운로드 실패 (HTTP status: ${fileRes.status})`);
         structureText = await fileRes.text();
       } catch (afErr: any) {
         return res.status(400).json({
@@ -208,7 +208,7 @@ app.post('/api/v1/targets', async (req, res) => {
           if (cifRes.ok) {
             structureText = await cifRes.text();
           } else {
-            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다.`);
+            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다. (PDB: HTTP ${rcsbRes.status}, CIF: HTTP ${cifRes.status})`);
           }
         }
       } catch (rcsbErr: any) {
@@ -667,7 +667,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         } else {
           const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
           if (cifRes.ok) targetPdbText = await cifRes.text();
-          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
+          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다. (PDB: HTTP ${pdbRes.status}, CIF: HTTP ${cifRes.status})`);
         }
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
@@ -678,13 +678,13 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetSourceType = 'uniprot';
       try {
         const afRes = await fetchWithTimeout(`https://alphafold.ebi.ac.uk/api/prediction/${targetIdentifier}`);
-        if (!afRes.ok) return res.status(400).json({ error: `AlphaFold DB에서 UniProt ${targetIdentifier}를 찾을 수 없습니다.` });
+        if (!afRes.ok) return res.status(400).json({ error: `AlphaFold DB에서 UniProt ${targetIdentifier}를 찾을 수 없습니다. (HTTP status: ${afRes.status})` });
         const meta = await afRes.json();
         const entry = Array.isArray(meta) ? meta[0] : meta;
         const pdbUrl = entry?.pdbUrl || entry?.cifUrl;
         if (!pdbUrl) return res.status(400).json({ error: 'AlphaFold 3D 구조 URL을 찾을 수 없습니다.' });
         const structRes = await fetchWithTimeout(pdbUrl);
-        if (!structRes.ok) return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드에 실패했습니다.' });
+        if (!structRes.ok) return res.status(400).json({ error: `AlphaFold 구조 파일 다운로드에 실패했습니다. (HTTP status: ${structRes.status})` });
         targetPdbText = await structRes.text();
       } catch (afErr: any) {
         return res.status(400).json({ error: `AlphaFold DB 조회 실패 (${targetIdentifier}): ${afErr.message || afErr}` });
@@ -993,7 +993,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             const txt = await cifRes.text();
             targetStructure = parseMmcif(txt);
           } else {
-            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다.` });
+            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다. (PDB: HTTP ${r.status}, CIF: HTTP ${cifRes.status})` });
           }
         }
       } catch (err: any) {
@@ -1006,7 +1006,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       try {
         const afRes = await fetchWithTimeout(`https://alphafold.ebi.ac.uk/api/prediction/${uniprotId}`);
         if (!afRes.ok) {
-          return res.status(400).json({ error: `AlphaFold DB에서 해당 UniProt ID (${uniprotId})를 찾을 수 없습니다.` });
+          return res.status(400).json({ error: `AlphaFold DB에서 해당 UniProt ID (${uniprotId})를 찾을 수 없습니다. (HTTP status: ${afRes.status})` });
         }
         const metaData = await afRes.json();
         const entry = Array.isArray(metaData) ? metaData[0] : metaData;
@@ -1017,7 +1017,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
         const fileRes = await fetchWithTimeout(fileUrl);
         if (!fileRes.ok) {
-          return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드 실패' });
+          return res.status(400).json({ error: `AlphaFold 구조 파일 다운로드 실패 (HTTP status: ${fileRes.status})` });
         }
         const txt = await fileRes.text();
         targetStructure = txt.includes('_atom_site.') ? parseMmcif(txt) : parsePdb(txt);
