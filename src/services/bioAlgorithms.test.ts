@@ -454,4 +454,27 @@ END
     expect(evalResult.autoSettings.candidateSource).toBe('simulated');
     expect(evalResult.autoSettings.isSimulated).toBe(true);
   });
+
+  it('should append context-aware qualification notes to fitness grade for temporary epitopes or predicted structures', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    // Case 1: Temporary epitope fallback with predicted candidate
+    const evalTemp = evaluateAntigenicMimicry(alignment, [], false, [0.25, 0.40, 0.20, 0.15], 'temporary_rsa_fallback');
+    expect(evalTemp.evaluationRationale).toContain('참고용');
+    expect(evalTemp.evaluationRationale).toContain('임시 에피톱');
+
+    // Case 2: Verified epitope with experimental candidate
+    const evalExp = evaluateAntigenicMimicry(alignment, [100, 101], true, [0.25, 0.40, 0.20, 0.15], 'manual');
+    expect(evalExp.evaluationRationale).not.toContain('참고용');
+    expect(evalExp.evaluationRationale).toContain('높음 (High)');
+  });
 });

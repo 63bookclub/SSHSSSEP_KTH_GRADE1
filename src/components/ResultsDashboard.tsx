@@ -71,12 +71,35 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   ) / 100;
 
   // Score grade
-  let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
+  const isTempEpi = result.auto_settings?.is_temporary_epitope;
+  const isSimulatedCand = result.auto_settings?.is_simulated || result.auto_settings?.candidate_source === 'simulated';
+  const isExpCand = result.auto_settings?.is_experimental_candidate;
+
+  let gradeBase = '낮음 (Low)';
+  let gradeBg = 'bg-rose-950 text-rose-300 border-rose-800';
   if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+    gradeBase = '높음 (High)';
+    gradeBg = 'bg-emerald-950 text-emerald-300 border-emerald-800';
   } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
+    gradeBase = '중간 (Moderate)';
+    gradeBg = 'bg-amber-950 text-amber-300 border-amber-800';
   }
+
+  let gradeNote = '';
+  if (isTempEpi && isSimulatedCand) {
+    gradeNote = ' (참고용 - 임시 에피톱·모사 구조)';
+  } else if (isTempEpi) {
+    gradeNote = ' (참고용 - 임시 에피톱)';
+  } else if (isSimulatedCand) {
+    gradeNote = ' (참고용 - 모사 구조)';
+  } else if (!isExpCand) {
+    gradeNote = ' (참고용 - 예측 모델)';
+  }
+
+  const gradeBadge = {
+    label: gradeBase + gradeNote,
+    bg: gradeBg,
+  };
 
   // Generate AI Insight handler
   const handleGenerateAi = async () => {

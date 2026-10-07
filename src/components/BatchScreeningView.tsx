@@ -728,6 +728,9 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const score = d.final_fitness_score ?? 0;
+                  const isTemp = d.auto_settings?.is_temporary_epitope;
+                  const isSim = d.auto_settings?.is_simulated || d.auto_settings?.candidate_source === 'simulated';
+
                   let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
                   let gradeText = '낮음 (Low)';
                   if (score >= 75) {
@@ -736,6 +739,10 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   } else if (score >= 50) {
                     gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
                     gradeText = '중간 (Mod)';
+                  }
+
+                  if (isTemp || isSim) {
+                    gradeText += ' (참고용)';
                   }
 
                   const isRank1 = idx === 0;

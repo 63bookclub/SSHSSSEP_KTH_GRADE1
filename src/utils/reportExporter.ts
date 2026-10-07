@@ -28,18 +28,32 @@ export function generateReportHtml(
     candidateSourceLabel = '실험 결정 구조 (PDB)';
   }
 
-  let gradeLabel = '낮음 (Low Mimicry)';
+  const isTempEpi = result.auto_settings.is_temporary_epitope;
+  let gradeBase = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
   if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
+    gradeBase = '높음 (High Mimicry)';
     gradeColor = '#059669';
     gradeBg = '#d1fae5';
   } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
+    gradeBase = '중간 (Moderate Mimicry)';
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';
   }
+
+  let gradeQualification = '';
+  if (isTempEpi && isSimulated) {
+    gradeQualification = ' (참고용 - 임시 에피톱·모사 구조)';
+  } else if (isTempEpi) {
+    gradeQualification = ' (참고용 - 임시 에피톱)';
+  } else if (isSimulated) {
+    gradeQualification = ' (참고용 - 모사 구조)';
+  } else if (!result.auto_settings.is_experimental_candidate) {
+    gradeQualification = ' (참고용 - 예측 모델)';
+  }
+
+  const gradeLabel = gradeBase + gradeQualification;
 
   const residueRows = residues
     .slice(0, 100)
