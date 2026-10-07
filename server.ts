@@ -208,7 +208,7 @@ app.post('/api/v1/targets', async (req, res) => {
           if (cifRes.ok) {
             structureText = await cifRes.text();
           } else {
-            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다.`);
+            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다. (HTTP ${rcsbRes.status}/${cifRes.status})`);
           }
         }
       } catch (rcsbErr: any) {
@@ -666,8 +666,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           targetPdbText = await pdbRes.text();
         } else {
           const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
-          if (cifRes.ok) targetPdbText = await cifRes.text();
-          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
+          if (cifRes.ok) {
+            targetPdbText = await cifRes.text();
+          } else {
+            throw new Error(`RCSB PDB에서 ${targetIdentifier}를 다운로드할 수 없습니다. (HTTP ${pdbRes.status}/${cifRes.status})`);
+          }
         }
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
@@ -993,7 +996,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             const txt = await cifRes.text();
             targetStructure = parseMmcif(txt);
           } else {
-            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다.` });
+            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다. (HTTP ${r.status}/${cifRes.status})` });
           }
         }
       } catch (err: any) {

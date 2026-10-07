@@ -1471,6 +1471,9 @@ export function evaluateAntigenicMimicry(
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
   // Rule-based deterministic deeply detailed scientific rationale (100% reproducible for science fair / thesis)
+  const isTemporaryEpitope = epitopeSource === 'temporary_rsa_fallback';
+  const isSimulatedStructure = !isExperimentalCandidate;
+
   let level = '낮음 (Low)';
   if (finalFitnessScore >= 75.0) level = '높음 (High)';
   else if (finalFitnessScore >= 50.0) level = '중간 (Moderate)';
@@ -1513,7 +1516,9 @@ export function evaluateAntigenicMimicry(
 
     `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = ${(sConf * 100).toFixed(1)}%)】\n• 에피톱 영역 고신뢰도 잔기 비율 (pLDDT ≥ 70): ${isExperimentalCandidate ? '100% (X-선/Cryo-EM 실험 결정 구조 PDB)' : `${highConfPercent}%`}\n• 신뢰도 진단: ${sConf >= 0.85 ? '에피톱 영역의 예측 불확실성이 극히 낮아 컴퓨터 시뮬레이션 결과의 신뢰성이 매우 높습니다.' : '에피톱 부위에 유연한 고리(Loop) 또는 비정형 구간이 포함되어 있어 추가적인 실험 검증이 권장됩니다.'}`,
 
-    `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
+    `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 등급 평가: ${level} (기준: 75점 이상 높음, 50점 이상 중간)\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.` +
+    (isTemporaryEpitope ? '\n• [주의] 임시 에피톱(표면 노출 잔기) 기준 평가 결과이므로, 구체적 에피톱 정보가 확보되면 재평가하세요.' : '') +
+    (isSimulatedStructure ? '\n• [주의] 모사 구조 기준 결과이므로 실제 구조 검증(Cryo-EM/X-ray)을 권장합니다.' : '')
   ];
 
   if (nonExistentResidues.length > 0) {
