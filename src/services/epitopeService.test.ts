@@ -101,4 +101,43 @@ describe('Epitope Resolution Service (resolveEpitopeInput)', () => {
     expect(result.method).toBe('temporary_rsa_fallback');
     expect(result.residues.length).toBeGreaterThan(0);
   });
+
+  it('should report manual method when complex mode fails and falls back to manual range', async () => {
+    const result = await resolveEpitopeInput({
+      targetStructure,
+      targetChain: 'A',
+      method: 'complex',
+      complexPdbId: 'INVALID_PDB',
+      manualRange: '100-101',
+    });
+
+    expect(result.method).toBe('manual');
+    expect(result.isTemporary).toBe(false);
+    expect(result.residues).toEqual([100, 101]);
+  });
+
+  it('should report temporary_rsa_fallback method when complex mode fails and falls back to RSA', async () => {
+    const result = await resolveEpitopeInput({
+      targetStructure,
+      targetChain: 'A',
+      method: 'complex',
+      complexPdbId: 'INVALID_PDB',
+      allowTemporaryFallback: true,
+    });
+
+    expect(result.method).toBe('temporary_rsa_fallback');
+    expect(result.isTemporary).toBe(true);
+    expect(result.residues.length).toBeGreaterThan(0);
+  });
+
+  it('should throw explicit error when requested target chain is missing', async () => {
+    expect(
+      resolveEpitopeInput({
+        targetStructure,
+        targetChain: 'B', // 'B' does not exist in mock target (only 'A')
+        method: 'manual',
+        manualRange: '100-102',
+      })
+    ).rejects.toThrow("요청한 타겟 체인 'B'이(가) 구조에 존재하지 않습니다");
+  });
 });

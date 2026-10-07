@@ -56,6 +56,13 @@ export async function resolveEpitopeInput(
     fetchTimeoutMs = 10000,
   } = options;
 
+  if (!targetStructure.chains.includes(targetChain)) {
+    const available = targetStructure.chains.join(', ') || '없음';
+    throw new Error(
+      `요청한 타겟 체인 '${targetChain}'이(가) 구조에 존재하지 않습니다. 사용 가능한 체인: [${available}]`
+    );
+  }
+
   const targetResList = targetStructure.residuesByChain[targetChain] || [];
   if (targetResList.length === 0) {
     throw new Error(`타겟 체인 (${targetChain})에 분석 가능한 잔기가 없습니다.`);
@@ -223,21 +230,33 @@ export async function resolveEpitopeInput(
       resolvedResidues = mappingResult.mappedResidues;
     } catch (cErr: any) {
       if (manualRange && manualRange.trim()) {
-        resolvedResidues = parseResidueRange(manualRange);
-      } else if (allowTemporaryFallback) {
+        const manualKeys = parseResidueRange(manualRange);
+        const validTargetKeys = new Set(targetResList.map((r) => String(r.resKey || r.resSeq)));
+        resolvedResidues = manualKeys.filter((k) => validTargetKeys.has(String(k)));
+        if (resolvedResidues.length > 0) {
+          return {
+            method: 'manual',
+            isTemporary: false,
+            residues: resolvedResidues,
+            note: `복합체 분석 실패로 대체된 수동 에피톱 범위 (${manualRange})`,
+          };
+        }
+      }
+
+      if (allowTemporaryFallback) {
         return {
           method: 'temporary_rsa_fallback',
           isTemporary: true,
           residues: getTemporarySurfaceResidues(),
-          note: '임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)',
+          note: '복합체 분석 실패로 대체된 임시 에피톱 사용 (표면 노출 잔기 RSA ≥ 0.2)',
         };
-      } else {
-        throw new Error(
-          `복합체 PDB (${complexPdbId}) 접촉 분석 실패: ${
-            cErr.message || '접촉 잔기를 추출하지 못했습니다'
-          }. 복합체 PDB ID 및 체인 정보를 확인해 주세요.`
-        );
       }
+
+      throw new Error(
+        `복합체 PDB (${complexPdbId}) 접촉 분석 실패: ${
+          cErr.message || '접촉 잔기를 추출하지 못했습니다'
+        }. 복합체 PDB ID 및 체인 정보를 확인해 주세요.`
+      );
     }
   }
 
