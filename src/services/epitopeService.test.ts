@@ -116,4 +116,16 @@ describe('Epitope Resolution Service (resolveEpitopeInput)', () => {
     expect(result.residues.length).toBe(3);
     expect(result.note).toContain('수동 범위로 대체됨');
   });
+
+  it('should throw explicit error when complex PDB download fails with non-OK or HTML error without manual range', async () => {
+    expect(
+      resolveEpitopeInput({
+        targetStructure,
+        targetChain: 'A',
+        method: 'complex',
+        complexPdbId: 'INVALID_PDB_ID_9999',
+        allowTemporaryFallback: false,
+      })
+    ).rejects.toThrow('복합체 PDB (INVALID_PDB_ID_9999) 접촉 분석 실패');
+  });
 });

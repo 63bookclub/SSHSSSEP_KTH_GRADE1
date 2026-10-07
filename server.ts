@@ -184,7 +184,9 @@ app.post('/api/v1/targets', async (req, res) => {
 
         const fileRes = await fetchWithTimeout(fileUrl);
         if (!fileRes.ok) throw new Error('AlphaFold 구조 파일 다운로드 실패');
-        structureText = await fileRes.text();
+        const txt = await fileRes.text();
+        if (txt.trim().startsWith('<')) throw new Error('AlphaFold 구조 응답이 유효한 PDB/CIF 형식이 아닙니다.');
+        structureText = txt;
       } catch (afErr: any) {
         return res.status(400).json({
           error: `AlphaFold DB 조회 오류: ${afErr?.message || '구조를 불러올 수 없습니다.'}. PDB ID를 입력하거나 구조 파일을 업로드해 보세요.`,
@@ -200,16 +202,24 @@ app.post('/api/v1/targets', async (req, res) => {
         const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
         const rcsbRes = await fetchWithTimeout(pdbUrl);
         if (rcsbRes.ok) {
-          structureText = await rcsbRes.text();
-        } else {
+          const txt = await rcsbRes.text();
+          if (!txt.trim().startsWith('<')) {
+            structureText = txt;
+          }
+        }
+        if (!structureText) {
           // Fallback to .cif
           const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
           const cifRes = await fetchWithTimeout(cifUrl);
           if (cifRes.ok) {
-            structureText = await cifRes.text();
-          } else {
-            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다.`);
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<')) {
+              structureText = txt;
+            }
           }
+        }
+        if (!structureText) {
+          throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없거나 HTML 오류 응답을 받았습니다.`);
         }
       } catch (rcsbErr: any) {
         return res.status(400).json({
@@ -663,12 +673,17 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       try {
         const pdbRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.pdb`);
         if (pdbRes.ok) {
-          targetPdbText = await pdbRes.text();
-        } else {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
-          if (cifRes.ok) targetPdbText = await cifRes.text();
-          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
+          const txt = await pdbRes.text();
+          if (!txt.trim().startsWith('<')) targetPdbText = txt;
         }
+        if (!targetPdbText) {
+          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<')) targetPdbText = txt;
+          }
+        }
+        if (!targetPdbText) throw new Error(`PDB ${targetIdentifier}를 찾을 수 없거나 유효하지 않은 응답을 받았습니다.`);
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
       }
@@ -685,7 +700,9 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         if (!pdbUrl) return res.status(400).json({ error: 'AlphaFold 3D 구조 URL을 찾을 수 없습니다.' });
         const structRes = await fetchWithTimeout(pdbUrl);
         if (!structRes.ok) return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드에 실패했습니다.' });
-        targetPdbText = await structRes.text();
+        const txt = await structRes.text();
+        if (txt.trim().startsWith('<')) return res.status(400).json({ error: 'AlphaFold 구조 파일이 HTML 오류 페이지입니다.' });
+        targetPdbText = txt;
       } catch (afErr: any) {
         return res.status(400).json({ error: `AlphaFold DB 조회 실패 (${targetIdentifier}): ${afErr.message || afErr}` });
       }
@@ -794,6 +811,9 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
         }
         const txt = await r.text();
+        if (txt.trim().startsWith('<')) {
+          throw new Error(`PDB ${candId} 응답이 HTML 오류 페이지입니다.`);
+        }
         candStructure = parsePdb(txt);
         isCandExperimental = true;
         candidateSource = 'experimental';
@@ -984,18 +1004,22 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       targetSourceType = 'pdb';
       try {
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.pdb`);
+        let txt = '';
         if (r.ok) {
-          const txt = await r.text();
-          targetStructure = parsePdb(txt);
-        } else {
+          const temp = await r.text();
+          if (!temp.trim().startsWith('<')) txt = temp;
+        }
+        if (!txt) {
           const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
           if (cifRes.ok) {
-            const txt = await cifRes.text();
-            targetStructure = parseMmcif(txt);
-          } else {
-            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다.` });
+            const temp = await cifRes.text();
+            if (!temp.trim().startsWith('<')) txt = temp;
           }
         }
+        if (!txt) {
+          return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없거나 HTML 오류 응답을 받았습니다.` });
+        }
+        targetStructure = txt.includes('_atom_site.') ? parseMmcif(txt) : parsePdb(txt);
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB 타겟 조회 실패 (${pdbId}): ${err.message || err}` });
       }
@@ -1020,6 +1044,9 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드 실패' });
         }
         const txt = await fileRes.text();
+        if (txt.trim().startsWith('<')) {
+          return res.status(400).json({ error: 'AlphaFold 구조 파일 응답이 HTML 오류 페이지입니다.' });
+        }
         targetStructure = txt.includes('_atom_site.') ? parseMmcif(txt) : parsePdb(txt);
       } catch (err: any) {
         return res.status(400).json({ error: `AlphaFold DB 타겟 조회 실패 (${uniprotId}): ${err.message || err}` });
@@ -1131,6 +1158,9 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
               throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
             }
             const txt = await r.text();
+            if (txt.trim().startsWith('<')) {
+              throw new Error(`PDB ${pId} 응답이 HTML 오류 페이지입니다.`);
+            }
             candStructure = parsePdb(txt);
             isCandExperimental = true;
             candidateSource = 'experimental';

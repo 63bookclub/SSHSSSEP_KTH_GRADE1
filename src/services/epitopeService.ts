@@ -186,15 +186,23 @@ export async function resolveEpitopeInput(
       try {
         const resp = await fetch(cifUrl, { signal: controller.signal });
         if (resp.ok) {
-          complexText = await resp.text();
-        } else {
+          const txt = await resp.text();
+          if (!txt.trim().startsWith('<')) {
+            complexText = txt;
+          }
+        }
+        if (!complexText) {
           const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
           const fbResp = await fetch(pdbUrl, { signal: controller.signal });
           if (fbResp.ok) {
-            complexText = await fbResp.text();
-          } else {
-            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (${fbResp.status})`);
+            const txt = await fbResp.text();
+            if (!txt.trim().startsWith('<')) {
+              complexText = txt;
+            }
           }
+        }
+        if (!complexText) {
+          throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (404 또는 유효하지 않은 PDB/CIF 응답)`);
         }
       } finally {
         clearTimeout(timeoutId);

@@ -41,6 +41,12 @@ export function generateReportHtml(
     gradeBg = '#fef3c7';
   }
 
+  if (result.auto_settings.is_temporary_epitope) {
+    gradeLabel += ' (임시 에피톱 적용)';
+  } else if (isSimulated) {
+    gradeLabel += ' (모사 구조 적용)';
+  }
+
   const residueRows = residues
     .slice(0, 100)
     .map(
