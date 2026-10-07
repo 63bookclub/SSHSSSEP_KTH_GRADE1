@@ -82,6 +82,7 @@ export async function resolveEpitopeInput(
   }
 
   let resolvedResidues: (number | string)[] = [];
+  let effectiveMethod: 'manual' | 'complex' | 'prediction_csv' | 'temporary_rsa_fallback' = method;
 
   if (method === 'manual') {
     if (!manualRange || !manualRange.trim()) {
@@ -224,6 +225,7 @@ export async function resolveEpitopeInput(
     } catch (cErr: any) {
       if (manualRange && manualRange.trim()) {
         resolvedResidues = parseResidueRange(manualRange);
+        effectiveMethod = 'manual';
       } else if (allowTemporaryFallback) {
         return {
           method: 'temporary_rsa_fallback',
@@ -285,9 +287,11 @@ export async function resolveEpitopeInput(
   }
 
   return {
-    method,
+    method: effectiveMethod,
     isTemporary: false,
     residues: resolvedResidues,
-    note: '사용자 정의 에피톱',
+    note: effectiveMethod === 'manual' && method === 'complex'
+      ? '복합체 추출 실패로 수동 범위로 대체됨'
+      : '사용자 정의 에피톱',
   };
 }

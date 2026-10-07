@@ -101,4 +101,19 @@ describe('Epitope Resolution Service (resolveEpitopeInput)', () => {
     expect(result.method).toBe('temporary_rsa_fallback');
     expect(result.residues.length).toBeGreaterThan(0);
   });
+
+  it('should record method as manual when complex epitope extraction fails and falls back to manualRange', async () => {
+    const result = await resolveEpitopeInput({
+      targetStructure,
+      targetChain: 'A',
+      method: 'complex',
+      complexPdbId: 'INVALID_PDB_ID_9999',
+      manualRange: '100-102',
+    });
+
+    expect(result.isTemporary).toBe(false);
+    expect(result.method).toBe('manual');
+    expect(result.residues.length).toBe(3);
+    expect(result.note).toContain('수동 범위로 대체됨');
+  });
 });
