@@ -28,6 +28,8 @@ export function generateReportHtml(
     candidateSourceLabel = '실험 결정 구조 (PDB)';
   }
 
+  const isTemporaryEpitope = result.auto_settings.is_temporary_epitope || result.auto_settings.epitope_source === 'temporary_rsa_fallback';
+
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
@@ -39,6 +41,15 @@ export function generateReportHtml(
     gradeLabel = '중간 (Moderate Mimicry)';
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';
+  }
+
+  if (isTemporaryEpitope || isSimulated) {
+    const reason = isTemporaryEpitope && isSimulated
+      ? '임시 에피톱 & 모사 구조'
+      : isTemporaryEpitope
+      ? '임시 에피톱'
+      : '모사 구조';
+    gradeLabel += ` (예비 - ${reason})`;
   }
 
   const residueRows = residues

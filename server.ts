@@ -199,16 +199,26 @@ app.post('/api/v1/targets', async (req, res) => {
       try {
         const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
         const rcsbRes = await fetchWithTimeout(pdbUrl);
+        let pdbStatus = rcsbRes.status;
         if (rcsbRes.ok) {
-          structureText = await rcsbRes.text();
-        } else {
+          const txt = await rcsbRes.text();
+          if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            structureText = txt;
+          }
+        }
+        if (!structureText) {
           // Fallback to .cif
           const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
           const cifRes = await fetchWithTimeout(cifUrl);
+          let cifStatus = cifRes.status;
           if (cifRes.ok) {
-            structureText = await cifRes.text();
-          } else {
-            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다.`);
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+              structureText = txt;
+            }
+          }
+          if (!structureText) {
+            throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없습니다. (PDB: HTTP ${pdbStatus}, CIF: HTTP ${cifStatus})`);
           }
         }
       } catch (rcsbErr: any) {
@@ -662,12 +672,25 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       targetSourceType = 'pdb';
       try {
         const pdbRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.pdb`);
+        let pdbStatus = pdbRes.status;
         if (pdbRes.ok) {
-          targetPdbText = await pdbRes.text();
-        } else {
+          const txt = await pdbRes.text();
+          if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            targetPdbText = txt;
+          }
+        }
+        if (!targetPdbText) {
           const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
-          if (cifRes.ok) targetPdbText = await cifRes.text();
-          else throw new Error(`PDB ${targetIdentifier}를 찾을 수 없습니다.`);
+          let cifStatus = cifRes.status;
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+              targetPdbText = txt;
+            }
+          }
+          if (!targetPdbText) {
+            throw new Error(`RCSB PDB에서 ${targetIdentifier}를 다운로드할 수 없습니다. (PDB: HTTP ${pdbStatus}, CIF: HTTP ${cifStatus})`);
+          }
         }
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
@@ -789,12 +812,29 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     } else if (isValidPdbId(cleanCandidate)) {
       const candId = cleanCandidate.toUpperCase();
       try {
+        let candText = '';
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
-        if (!r.ok) {
-          throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
+        let pdbStatus = r.status;
+        if (r.ok) {
+          const txt = await r.text();
+          if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            candText = txt;
+          }
         }
-        const txt = await r.text();
-        candStructure = parsePdb(txt);
+        if (!candText) {
+          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.cif`);
+          let cifStatus = cifRes.status;
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+              candText = txt;
+            }
+          }
+          if (!candText) {
+            throw new Error(`PDB ${candId} 다운로드 실패 (PDB: HTTP ${pdbStatus}, CIF: HTTP ${cifStatus})`);
+          }
+        }
+        candStructure = candText.includes('_atom_site.') ? parseMmcif(candText) : parsePdb(candText);
         isCandExperimental = true;
         candidateSource = 'experimental';
         isSimulated = false;
@@ -983,19 +1023,29 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       targetIdentifier = pdbId;
       targetSourceType = 'pdb';
       try {
+        let targetText = '';
         const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.pdb`);
+        let pdbStatus = r.status;
         if (r.ok) {
           const txt = await r.text();
-          targetStructure = parsePdb(txt);
-        } else {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
-          if (cifRes.ok) {
-            const txt = await cifRes.text();
-            targetStructure = parseMmcif(txt);
-          } else {
-            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다.` });
+          if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            targetText = txt;
           }
         }
+        if (!targetText) {
+          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
+          let cifStatus = cifRes.status;
+          if (cifRes.ok) {
+            const txt = await cifRes.text();
+            if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+              targetText = txt;
+            }
+          }
+          if (!targetText) {
+            return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없습니다. (PDB: HTTP ${pdbStatus}, CIF: HTTP ${cifStatus})` });
+          }
+        }
+        targetStructure = targetText.includes('_atom_site.') ? parseMmcif(targetText) : parsePdb(targetText);
       } catch (err: any) {
         return res.status(400).json({ error: `RCSB PDB 타겟 조회 실패 (${pdbId}): ${err.message || err}` });
       }
@@ -1126,12 +1176,29 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
         } else if (isValidPdbId(cleanCand)) {
           const pId = cleanCand.toUpperCase();
           try {
+            let candText = '';
             const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
-            if (!r.ok) {
-              throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
+            let pdbStatus = r.status;
+            if (r.ok) {
+              const txt = await r.text();
+              if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+                candText = txt;
+              }
             }
-            const txt = await r.text();
-            candStructure = parsePdb(txt);
+            if (!candText) {
+              const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.cif`);
+              let cifStatus = cifRes.status;
+              if (cifRes.ok) {
+                const txt = await cifRes.text();
+                if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+                  candText = txt;
+                }
+              }
+              if (!candText) {
+                throw new Error(`PDB ${pId} 다운로드 실패 (PDB: HTTP ${pdbStatus}, CIF: HTTP ${cifStatus})`);
+              }
+            }
+            candStructure = candText.includes('_atom_site.') ? parseMmcif(candText) : parsePdb(candText);
             isCandExperimental = true;
             candidateSource = 'experimental';
             isSimulated = false;
