@@ -183,18 +183,30 @@ export async function resolveEpitopeInput(
       const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
       let complexText = '';
+      let cifStatus = 0;
+      let pdbStatus = 0;
       try {
         const resp = await fetch(cifUrl, { signal: controller.signal });
+        cifStatus = resp.status;
         if (resp.ok) {
-          complexText = await resp.text();
-        } else {
+          const txt = await resp.text();
+          if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+            complexText = txt;
+          }
+        }
+        if (!complexText) {
           const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
           const fbResp = await fetch(pdbUrl, { signal: controller.signal });
+          pdbStatus = fbResp.status;
           if (fbResp.ok) {
-            complexText = await fbResp.text();
-          } else {
-            throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (${fbResp.status})`);
+            const txt = await fbResp.text();
+            if (!txt.trim().startsWith('<!DOCTYPE') && !txt.trim().startsWith('<html')) {
+              complexText = txt;
+            }
           }
+        }
+        if (!complexText) {
+          throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (CIF: ${cifStatus || 'N/A'}, PDB: ${pdbStatus || 'N/A'})`);
         }
       } finally {
         clearTimeout(timeoutId);
@@ -211,7 +223,18 @@ export async function resolveEpitopeInput(
       const agChain = antigenChain || targetChain;
 
       const rawContacts = extractComplexContacts(complexStruct, agChain, abChains, 4.5);
+      if (rawContacts.length === 0) {
+        throw new Error(
+          `복합체 PDB (${cleanPdbId}) 접촉 분석 실패: 체인 ${agChain}(항원)과 체인 ${abChains.join('/')}(항체) 간 4.5Å 이내 접촉 잔기를 발견하지 못했습니다.`
+        );
+      }
+
       const complexAgResidues = complexStruct.residuesByChain[agChain] || [];
+      if (complexAgResidues.length === 0) {
+        throw new Error(
+          `복합체 PDB (${cleanPdbId})에서 항원 체인(${agChain}) 잔기를 파싱하지 못했습니다. 체인명을 확인해 주세요.`
+        );
+      }
 
       const mappingResult = await mapComplexResiduesToTarget(
         complexAgResidues,
