@@ -7,6 +7,7 @@ import {
   evaluateAntigenicMimicry,
   calculateSASA,
   computeKabsch,
+  SCORING_GRADE_THRESHOLDS,
 } from '../services/bioAlgorithms.ts';
 
 interface ValidationResultRow {
@@ -296,7 +297,7 @@ export const ValidationLab: React.FC<{
                     <td className="py-2.5 px-2 text-right text-rose-300">{r.sEpi.toFixed(3)}</td>
                     <td className="py-2.5 px-2 text-right text-emerald-300">{r.sExp.toFixed(3)}</td>
                     <td className="py-2.5 px-2 text-right font-bold text-white">
-                      <span className={`px-1.5 py-0.5 rounded ${r.finalScore >= 75 ? 'bg-emerald-950 text-emerald-300' : r.finalScore >= 45 ? 'bg-amber-950 text-amber-300' : 'bg-rose-950 text-rose-300'}`}>
+                      <span className={`px-1.5 py-0.5 rounded ${r.finalScore >= SCORING_GRADE_THRESHOLDS.HIGH ? 'bg-emerald-950 text-emerald-300' : r.finalScore >= SCORING_GRADE_THRESHOLDS.MODERATE ? 'bg-amber-950 text-amber-300' : 'bg-rose-950 text-rose-300'}`}>
                         {r.finalScore.toFixed(1)}
                       </span>
                     </td>

@@ -1180,6 +1180,28 @@ export interface MultiEpitopeEntity {
   rmsd?: number;
 }
 
+/**
+ * Shared scoring grade thresholds and scientific rationale evidence guidelines
+ */
+export const SCORING_GRADE_THRESHOLDS = {
+  HIGH: 75.0,     // 75.0 or above -> High mimicry (높음)
+  MODERATE: 50.0, // 50.0 ~ 74.9 -> Moderate mimicry (중간)
+} as const;
+
+export function getFitnessScoreGrade(score: number): {
+  level: string;
+  gradeKey: 'HIGH' | 'MODERATE' | 'LOW';
+  badgeBg: string;
+} {
+  if (score >= SCORING_GRADE_THRESHOLDS.HIGH) {
+    return { level: '높음 (High)', gradeKey: 'HIGH', badgeBg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+  }
+  if (score >= SCORING_GRADE_THRESHOLDS.MODERATE) {
+    return { level: '중간 (Moderate)', gradeKey: 'MODERATE', badgeBg: 'bg-amber-950 text-amber-300 border-amber-800' };
+  }
+  return { level: '낮음 (Low)', gradeKey: 'LOW', badgeBg: 'bg-rose-950 text-rose-300 border-rose-800' };
+}
+
 export interface EvaluationResult {
   autoSettings: {
     mode: 'full' | 'fragment';
@@ -1471,9 +1493,8 @@ export function evaluateAntigenicMimicry(
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
   // Rule-based deterministic deeply detailed scientific rationale (100% reproducible for science fair / thesis)
-  let level = '낮음 (Low)';
-  if (finalFitnessScore >= 75.0) level = '높음 (High)';
-  else if (finalFitnessScore >= 50.0) level = '중간 (Moderate)';
+  const gradeInfo = getFitnessScoreGrade(finalFitnessScore);
+  const level = gradeInfo.level;
 
   const validEpiDists = epiDistances.filter(d => d < 50);
   const epiDistMean = validEpiDists.length > 0
@@ -1503,7 +1524,7 @@ export function evaluateAntigenicMimicry(
   const highConfPercent = Math.round(sConf * 100);
 
   const rationaleSections: string[] = [
-    `【1. 종합 판정 요약】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}]\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개`,
+    `【1. 종합 판정 요약 및 검증 근거】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}] (등급 기준: ${SCORING_GRADE_THRESHOLDS.HIGH}점 이상 높음, ${SCORING_GRADE_THRESHOLDS.MODERATE}점 이상 중간)\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개`,
 
     `\n【2. 전체 골격 위상 및 3D 접힘 구조 정렬 (S_global = ${(sGlobal * 100).toFixed(1)}%)】\n• TM-score: 타겟 기준 ${tmScoreTargetNorm.toFixed(4)}, 후보 기준 ${tmScoreCandNorm.toFixed(4)} (Zhang & Skolnick 기준: TM > 0.5일 때 동일한 단백질 슈퍼패밀리 폴딩 구조 형성 확인)\n• Cα 중첩 RMSD: ${rmsd.toFixed(2)} Å (정렬된 잔기: ${alignedLength}개 / 서열 정렬 커버리지: ${(coverage * 100).toFixed(1)}%)\n• 백본 구조적 해석: ${sGlobal >= 0.7 ? '타겟 항원의 주쇄 2차 구조(Alpha-helix/Beta-sheet) 배열이 후보 물질과 높은 위상학적 일치도를 보입니다.' : '일부 코어 또는 도메인 접힘에서 국소적인 변형 및 루프 회전이 존재합니다.'}`,
 
@@ -1513,7 +1534,7 @@ export function evaluateAntigenicMimicry(
 
     `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = ${(sConf * 100).toFixed(1)}%)】\n• 에피톱 영역 고신뢰도 잔기 비율 (pLDDT ≥ 70): ${isExperimentalCandidate ? '100% (X-선/Cryo-EM 실험 결정 구조 PDB)' : `${highConfPercent}%`}\n• 신뢰도 진단: ${sConf >= 0.85 ? '에피톱 영역의 예측 불확실성이 극히 낮아 컴퓨터 시뮬레이션 결과의 신뢰성이 매우 높습니다.' : '에피톱 부위에 유연한 고리(Loop) 또는 비정형 구간이 포함되어 있어 추가적인 실험 검증이 권장됩니다.'}`,
 
-    `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
+    `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= SCORING_GRADE_THRESHOLDS.HIGH ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
   ];
 
   if (nonExistentResidues.length > 0) {

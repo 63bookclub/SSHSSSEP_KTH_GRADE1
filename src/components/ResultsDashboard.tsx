@@ -20,6 +20,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { JobResultData, fetchAiInsight } from '../services/api.ts';
+import { getFitnessScoreGrade } from '../services/bioAlgorithms.ts';
 import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
@@ -71,12 +72,8 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   ) / 100;
 
   // Score grade
-  let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-  if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
-  } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
-  }
+  const gradeInfo = getFitnessScoreGrade(dynamicScore);
+  const gradeBadge = { label: gradeInfo.level, bg: gradeInfo.badgeBg };
 
   // Generate AI Insight handler
   const handleGenerateAi = async () => {
