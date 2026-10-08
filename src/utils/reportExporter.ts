@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
+import { escapeHtml } from './htmlSanitizer.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -52,8 +53,8 @@ export function generateReportHtml(
     .map(
       (r) => `
     <tr style="border-bottom: 1px solid #e2e8f0; ${r.in_epitope ? 'background-color: #fff1f2;' : ''}">
-      <td style="padding: 5px 8px; font-weight: ${r.in_epitope ? 'bold' : 'normal'}; text-align: center; color: #1e293b;">${r.res_id}</td>
-      <td style="padding: 5px 8px; font-weight: bold; text-align: center; color: #0f172a;">${r.res_name || ''}</td>
+      <td style="padding: 5px 8px; font-weight: ${r.in_epitope ? 'bold' : 'normal'}; text-align: center; color: #1e293b;">${escapeHtml(r.res_id)}</td>
+      <td style="padding: 5px 8px; font-weight: bold; text-align: center; color: #0f172a;">${escapeHtml(r.res_name || '')}</td>
       <td style="padding: 5px 8px; text-align: center; color: ${r.in_epitope ? '#e11d48' : '#64748b'}; font-weight: bold;">
         ${r.in_epitope ? '★ 에피톱' : '골격(비에피톱)'}
       </td>
@@ -79,13 +80,14 @@ export function generateReportHtml(
     .map((line) => {
       const trimmed = line.trim();
       if (!trimmed) return '';
+      const escaped = escapeHtml(trimmed);
       if (trimmed.startsWith('【') || trimmed.startsWith('[')) {
-        return `<div style="font-weight: 800; font-size: 12px; color: #0f172a; margin-top: 10px; margin-bottom: 4px; border-left: 3px solid #0284c7; padding-left: 8px;">${trimmed}</div>`;
+        return `<div style="font-weight: 800; font-size: 12px; color: #0f172a; margin-top: 10px; margin-bottom: 4px; border-left: 3px solid #0284c7; padding-left: 8px;">${escaped}</div>`;
       }
       if (trimmed.startsWith('•')) {
-        return `<div style="padding-left: 12px; margin-bottom: 3px; color: #334155; line-height: 1.6;">${trimmed}</div>`;
+        return `<div style="padding-left: 12px; margin-bottom: 3px; color: #334155; line-height: 1.6;">${escaped}</div>`;
       }
-      return `<div style="margin-bottom: 4px; color: #334155; line-height: 1.6;">${trimmed}</div>`;
+      return `<div style="margin-bottom: 4px; color: #334155; line-height: 1.6;">${escaped}</div>`;
     })
     .join('');
 
@@ -299,15 +301,15 @@ export function generateReportHtml(
         </tr>
         <tr>
           <td style="color: #64748b;">분석 모드 / 분석 타겟 체인:</td>
-          <td style="font-weight: bold; text-align: right;">${result.auto_settings.mode === 'fragment' ? '단편 (Fragment)' : '전체 (Full)'} / ${result.auto_settings.target_chain}체인</td>
+          <td style="font-weight: bold; text-align: right;">${result.auto_settings.mode === 'fragment' ? '단편 (Fragment)' : '전체 (Full)'} / ${escapeHtml(result.auto_settings.target_chain)}체인</td>
         </tr>
         <tr>
           <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
-          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${candidateSourceLabel}</td>
+          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>
-          <td style="font-weight: bold; text-align: right;">${result.auto_settings.is_temporary_epitope ? '임시 자동 추출 (RSA ≥ 0.2)' : result.auto_settings.epitope_source} (${epitopeResidues.length}개 잔기)</td>
+          <td style="font-weight: bold; text-align: right;">${result.auto_settings.is_temporary_epitope ? '임시 자동 추출 (RSA ≥ 0.2)' : escapeHtml(result.auto_settings.epitope_source)} (${epitopeResidues.length}개 잔기)</td>
         </tr>
       </table>
     </div>
