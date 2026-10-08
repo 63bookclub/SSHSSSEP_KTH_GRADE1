@@ -29,12 +29,20 @@ import {
   validateAndNormalizeWeights,
 } from './src/utils/validation.ts';
 import { resolveTargetChain, resolveCandidateChain } from './src/services/chainService.ts';
+import {
+  MAX_BODY_PAYLOAD_SIZE,
+  MAX_BATCH_CANDIDATES,
+  MAX_STRUCTURE_ATOMS,
+  checkAtomCountLimit,
+  checkBatchCandidatesLimit,
+} from './src/utils/limits.ts';
+import { handleApiError } from './src/utils/errorHandler.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: MAX_BODY_PAYLOAD_SIZE }));
+app.use(express.urlencoded({ extended: true, limit: MAX_BODY_PAYLOAD_SIZE }));
 
 // In-memory persistent stores for sessions/jobs
 interface StoredTarget {
@@ -243,6 +251,11 @@ app.post('/api/v1/targets', async (req, res) => {
       return res.status(400).json({ error: '유효한 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다. 표준 PDB/mmCIF 파일인지 확인해 주세요.' });
     }
 
+    const atomLimitCheck = checkAtomCountLimit(structure.allAtoms.length);
+    if (!atomLimitCheck.isWithinLimit) {
+      return res.status(400).json({ error: atomLimitCheck.error });
+    }
+
     // Calculate SASA for all chains in full assembly context
     const allAssemblyResidues = Object.values(structure.residuesByChain).flat();
     for (const chain of structure.chains) {
@@ -278,7 +291,7 @@ app.post('/api/v1/targets', async (req, res) => {
       sample_pdb: structure.rawPdb,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || '타겟 구조 처리 중 서버 오류가 발생했습니다.' });
+    handleApiError(res, err, '타겟 구조 처리 중 오류가 발생했습니다.', 500);
   }
 });
 
@@ -347,7 +360,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       note: epitopeResult.note,
     });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || '에피톱 처리 중 오류가 발생했습니다.' });
+    handleApiError(res, err, '에피톱 처리 중 오류가 발생했습니다.', 400);
   }
 });
 
@@ -404,6 +417,11 @@ app.post('/api/v1/candidates', async (req, res) => {
       return res.status(400).json({ error: '후보 물질 구조 파싱에 실패했습니다. 유효한 PDB 좌표인지 확인해 주세요.' });
     }
 
+    const candAtomLimitCheck = checkAtomCountLimit(structure.allAtoms.length);
+    if (!candAtomLimitCheck.isWithinLimit) {
+      return res.status(400).json({ error: candAtomLimitCheck.error });
+    }
+
     let candChain = '';
     try {
       candChain = resolveCandidateChain(structure.chains, reqChain, filename);
@@ -441,7 +459,7 @@ app.post('/api/v1/candidates', async (req, res) => {
       sample_pdb: structure.rawPdb,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || '후보 물질 처리 중 오류가 발생했습니다.' });
+    handleApiError(res, err, '후보 물질 처리 중 오류가 발생했습니다.', 500);
   }
 });
 
@@ -556,7 +574,7 @@ app.post('/api/v1/jobs', async (req, res) => {
       status: 'queued',
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || '작업 생성 및 실행 중 오류가 발생했습니다.' });
+    handleApiError(res, err, '작업 생성 및 실행 중 오류가 발생했습니다.', 500);
   }
 });
 
@@ -718,6 +736,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       return res.status(400).json({ error: '유효한 타겟 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다.' });
     }
 
+    const targetAtomCheck = checkAtomCountLimit(targetStructure.allAtoms.length);
+    if (!targetAtomCheck.isWithinLimit) {
+      return res.status(400).json({ error: targetAtomCheck.error });
+    }
+
     // Calculate SASA on target (in full assembly context across all chains)
     const allTargetAssemblyResidues = Object.values(targetStructure.residuesByChain).flat();
     for (const chain of targetStructure.chains) {
@@ -857,6 +880,11 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       return res.status(400).json({ error: chainErr.message });
     }
 
+    const candAtomCheck = checkAtomCountLimit(candStructure.allAtoms.length);
+    if (!candAtomCheck.isWithinLimit) {
+      return res.status(400).json({ error: candAtomCheck.error });
+    }
+
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
     if (candResidues.length === 0) {
       return res.status(400).json({ error: '후보 물질 구조에서 잔기 좌표를 생성하지 못했습니다.' });
@@ -963,8 +991,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
 
     res.json(respData);
   } catch (err: any) {
-    console.error('Quick analyze error:', err);
-    res.status(500).json({ error: err.message || '빠른 분석 처리 중 서버 오류가 발생했습니다.' });
+    handleApiError(res, err, '빠른 분석 처리 중 서버 오류가 발생했습니다.', 500);
   }
 });
 
@@ -986,6 +1013,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
       return res.status(400).json({ error: '최소 1개 이상의 후보 물질(Candidate Entity)이 필요합니다.' });
+    }
+
+    const batchCandCheck = checkBatchCandidatesLimit(candidates.length);
+    if (!batchCandCheck.isWithinLimit) {
+      return res.status(400).json({ error: batchCandCheck.error });
     }
 
     // 1. Resolve Target
@@ -1053,6 +1085,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       }
     } else {
       return res.status(400).json({ error: '유효하지 않은 타겟 입력입니다. 타겟은 PDB/mmCIF 구조 파일, PDB ID 또는 UniProt ID만 지원됩니다.' });
+    }
+
+    const targetAtomCheck = checkAtomCountLimit(targetStructure.allAtoms.length);
+    if (!targetAtomCheck.isWithinLimit) {
+      return res.status(400).json({ error: targetAtomCheck.error });
     }
 
     let targetChain = '';
@@ -1194,6 +1231,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           }
         }
 
+        const candAtomCheck = checkAtomCountLimit(candStructure.allAtoms.length);
+        if (!candAtomCheck.isWithinLimit) {
+          throw new Error(candAtomCheck.error);
+        }
+
         try {
           candChain = resolveCandidateChain(candStructure.chains, cand.chain, candName);
         } catch (chainErr: any) {
@@ -1305,8 +1347,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       results,
     });
   } catch (err: any) {
-    console.error('Batch analyze error:', err);
-    res.status(500).json({ error: err.message || '다중 후보 물질 배치 분석 중 서버 오류가 발생했습니다.' });
+    handleApiError(res, err, '다중 후보 물질 배치 분석 중 서버 오류가 발생했습니다.', 500);
   }
 });
 
@@ -1382,8 +1423,7 @@ app.post('/api/v1/ai-insights', async (req, res) => {
     const insightText = await generateAiInsight(validatedData);
     res.json({ insight: insightText });
   } catch (err: any) {
-    console.error('AI Insight endpoint error:', err);
-    res.status(500).json({ error: err.message || 'AI 리포트 생성 중 오류가 발생했습니다.' });
+    handleApiError(res, err, 'AI 리포트 생성 중 오류가 발생했습니다.', 500);
   }
 });
 
