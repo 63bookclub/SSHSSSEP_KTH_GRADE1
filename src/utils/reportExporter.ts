@@ -276,7 +276,7 @@ export function generateReportHtml(
         <div>• <strong>골격 유사도(S_global):</strong> ${(result.sub_scores.s_global * 100).toFixed(1)}% (가중치 ${(normWeights[0] * 100).toFixed(0)}%)</div>
         <div>• <strong>에피톱 모방도(S_epi):</strong> ${(result.sub_scores.s_epi * 100).toFixed(1)}% (가중치 ${(normWeights[1] * 100).toFixed(0)}%)</div>
         <div>• <strong>노출도 일치율(S_exp):</strong> ${(result.sub_scores.s_exp * 100).toFixed(1)}% (가중치 ${(normWeights[2] * 100).toFixed(0)}%)</div>
-        <div>• <strong>구조 신뢰도(S_conf):</strong> ${(result.sub_scores.s_conf * 100).toFixed(1)}% (가중치 ${(normWeights[3] * 100).toFixed(0)}%)</div>
+        <div>• <strong>구조 신뢰도(S_conf):</strong> ${result.sub_scores.s_conf !== null && result.sub_scores.s_conf !== undefined ? `${(result.sub_scores.s_conf * 100).toFixed(1)}%` : '해당 없음 (실험 결정 구조)'} (가중치 ${(normWeights[3] * 100).toFixed(0)}%)</div>
       </div>
     </div>
 

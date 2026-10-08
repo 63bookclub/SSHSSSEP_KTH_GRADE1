@@ -241,7 +241,7 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-slate-500">
-                ※ 실험 구조(X-ray, Cryo-EM) 업로드 시 신뢰도 점수(S_conf)는 최고점인 1.0(100%)으로 자동 산정됩니다.
+                ※ 실험 구조(X-ray, Cryo-EM) 업로드 시 신뢰도 점수(S_conf)는 해당 없음(N/A) 처리되며, 가중치가 타 지표로 자동 재분배됩니다.
               </p>
             </div>
           )}
@@ -280,7 +280,7 @@ export const CandidateStep: React.FC<CandidateStepProps> = ({
                 </span>
                 {candResult.is_experimental ? (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
-                    실험 구조 (S_conf=1.0)
+                    실험 구조 (S_conf N/A)
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 text-[10px] font-bold">

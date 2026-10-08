@@ -373,7 +373,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
         (d.sub_scores.s_global ?? 0).toFixed(4),
         (d.sub_scores.s_epi ?? 0).toFixed(4),
         (d.sub_scores.s_exp ?? 0).toFixed(4),
-        (d.sub_scores.s_conf ?? 0).toFixed(4),
+        d.sub_scores.s_conf !== null && d.sub_scores.s_conf !== undefined ? d.sub_scores.s_conf.toFixed(4) : 'N/A',
         (d.alignment.tm_score_target_norm ?? 0).toFixed(4),
         (d.alignment.rmsd ?? 0).toFixed(2),
         d.alignment.aligned_length,
