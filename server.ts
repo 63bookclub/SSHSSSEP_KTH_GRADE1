@@ -1,4 +1,6 @@
 import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import {
   parsePdb,
@@ -40,6 +42,26 @@ import { handleApiError } from './src/utils/errorHandler.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(helmet({ contentSecurityPolicy: false }));
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server) or listed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS policy restricts access from origin: ${origin}`));
+      }
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: MAX_BODY_PAYLOAD_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_BODY_PAYLOAD_SIZE }));
