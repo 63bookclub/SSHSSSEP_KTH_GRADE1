@@ -252,7 +252,7 @@ app.post('/api/v1/targets', async (req, res) => {
       }
     }
 
-    const targetId = 'tgt_' + Math.random().toString(36).substring(2, 10);
+    const targetId = 'tgt_' + crypto.randomUUID();
     const chainResidueCounts: Record<string, number> = {};
     for (const c of structure.chains) {
       chainResidueCounts[c] = (structure.residuesByChain[c] || []).length;
@@ -328,7 +328,7 @@ app.post('/api/v1/epitopes', async (req, res) => {
       targetIdentifier: target.identifier,
     });
 
-    const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
+    const epitopeId = 'epi_' + crypto.randomUUID();
     epitopesStore.set(epitopeId, {
       id: epitopeId,
       targetId: target_id,
@@ -416,7 +416,7 @@ app.post('/api/v1/candidates', async (req, res) => {
       calculateSASA(resList, 1.4, 96, allCandResidues);
     }
 
-    const candidateId = 'cand_' + Math.random().toString(36).substring(2, 10);
+    const candidateId = 'cand_' + crypto.randomUUID();
     candidatesStore.set(candidateId, {
       id: candidateId,
       sourceType,
@@ -478,7 +478,7 @@ app.post('/api/v1/jobs', async (req, res) => {
     }
     const customWeights = weightValidation.normalizedWeights;
 
-    const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+    const jobId = 'job_' + crypto.randomUUID();
 
     const targetResidues = target.structure.residuesByChain[target_chain] || Object.values(target.structure.residuesByChain)[0] || [];
     const candResidues = candidate.structure.residuesByChain[candChain] || Object.values(candidate.structure.residuesByChain)[0] || [];
@@ -738,7 +738,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     }
 
     // Save target
-    const targetId = 'tgt_' + Math.random().toString(36).substring(2, 10);
+    const targetId = 'tgt_' + crypto.randomUUID();
     targetsStore.set(targetId, {
       id: targetId,
       sourceType: targetSourceType,
@@ -770,7 +770,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     const epitopeResidueSeqs = epitopeResult.residues;
     const epitopeMethod = epitopeResult.method;
 
-    const epitopeId = 'epi_' + Math.random().toString(36).substring(2, 10);
+    const epitopeId = 'epi_' + crypto.randomUUID();
     epitopesStore.set(epitopeId, {
       id: epitopeId,
       targetId,
@@ -864,7 +864,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     const allCandAssemblyResidues = Object.values(candStructure.residuesByChain).flat();
     calculateSASA(candResidues, 1.4, 96, allCandAssemblyResidues);
 
-    const candidateId = 'cand_' + Math.random().toString(36).substring(2, 10);
+    const candidateId = 'cand_' + crypto.randomUUID();
     candidatesStore.set(candidateId, {
       id: candidateId,
       identifier: isCandExperimental ? 'Custom_Candidate_PDB' : 'Candidate_Sequence',
@@ -907,7 +907,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       alignment.translationVector
     );
 
-    const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+    const jobId = 'job_' + crypto.randomUUID();
     const jobRecord: StoredJob = {
       id: jobId,
       targetId,
@@ -1070,7 +1070,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       chainResidueCounts[c] = (targetStructure.residuesByChain[c] || []).length;
     }
 
-    const targetId = 'tgt_' + Math.random().toString(36).substring(2, 10);
+    const targetId = 'tgt_' + crypto.randomUUID();
     targetsStore.set(targetId, {
       id: targetId,
       identifier: 'Batch_Target',
@@ -1225,7 +1225,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
           alignment.translationVector
         );
 
-        const jobId = 'job_' + Math.random().toString(36).substring(2, 10);
+        const jobId = 'job_' + crypto.randomUUID();
         const jobRecord: StoredJob = {
           id: jobId,
           targetId,
