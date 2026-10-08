@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldAlert, Award, FileText, CheckCircle2, Lightbulb, Activity } from 'lucide-react';
+import { escapeHtml } from './escapeHtml.ts';
 
 export interface AiMetricItem {
   metricName: string;
@@ -116,7 +117,7 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
   if (parsed.header) {
     html += `
       <div style="font-weight: 800; font-size: 13px; color: #4338ca; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1.5px solid #e0e7ff;">
-        ${parsed.header}
+        ${escapeHtml(parsed.header)}
       </div>
     `;
   }
@@ -126,7 +127,7 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
       <div style="margin-bottom: 10px; background: #ffffff; border: 1px solid #e0e7ff; border-radius: 6px; padding: 8px 10px;">
         <div style="font-weight: 700; font-size: 11.5px; color: #3730a3; margin-bottom: 6px; display: flex; align-items: center;">
           <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6366f1; margin-right: 6px;"></span>
-          ${sec.title}
+          ${escapeHtml(sec.title)}
         </div>
     `;
 
@@ -135,8 +136,8 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
       sec.metrics.forEach((m) => {
         html += `
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 8px; font-size: 10.5px;">
-            <div style="font-weight: bold; color: #0284c7; margin-bottom: 2px;">• ${m.metricName}</div>
-            <div style="color: #334155; line-height: 1.5;">${m.explanation}</div>
+            <div style="font-weight: bold; color: #0284c7; margin-bottom: 2px;">• ${escapeHtml(m.metricName)}</div>
+            <div style="color: #334155; line-height: 1.5;">${escapeHtml(m.explanation)}</div>
           </div>
         `;
       });
@@ -146,7 +147,7 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
     if (sec.explanation) {
       html += `
         <div style="font-size: 10.5px; color: #334155; line-height: 1.6; white-space: pre-wrap;">
-          ${sec.explanation}
+          ${escapeHtml(sec.explanation)}
         </div>
       `;
     }
@@ -154,7 +155,7 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
     if (sec.recommendation) {
       html += `
         <div style="margin-top: 6px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 6px 8px; font-size: 10.5px; color: #065f46;">
-          <strong style="color: #047857;">[추천 실험 방향]:</strong> ${sec.recommendation}
+          <strong style="color: #047857;">[추천 실험 방향]:</strong> ${escapeHtml(sec.recommendation)}
         </div>
       `;
     }
@@ -165,7 +166,7 @@ export function convertAiInsightToPrintHtml(rawText: string): string {
   if (parsed.disclaimer) {
     html += `
       <div style="margin-top: 8px; font-size: 9.5px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 6px 8px;">
-        <strong>면책 조항:</strong> ${parsed.disclaimer}
+        <strong>면책 조항:</strong> ${escapeHtml(parsed.disclaimer)}
       </div>
     `;
   }
