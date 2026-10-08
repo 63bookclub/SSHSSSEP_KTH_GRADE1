@@ -8,13 +8,14 @@
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
 export interface AiInsightRequest {
+  job_id: string;
   finalScore: number;
   grade: string;
   subScores: {
     s_global: number;
     s_epi: number;
     s_exp: number;
-    s_conf: number;
+    s_conf: number | null;
   };
   alignment: {
     tm_score_target_norm: number;
@@ -35,31 +36,37 @@ export async function generateAiInsight(data: AiInsightRequest): Promise<string>
     throw new Error('GROQ_API_KEY가 서버 환경 변수에 설정되지 않았습니다. 환경 변수 GROQ_API_KEY를 등록해 주세요.');
   }
 
+  const finalScore = data.finalScore ?? 0;
+  const grade = data.grade || 'N/A';
+  const subScores = data.subScores || { s_global: 0, s_epi: 0, s_exp: 0, s_conf: null };
+  const alignment = data.alignment || { tm_score_target_norm: 0, tm_score_candidate_norm: 0, rmsd: 0, aligned_length: 0, coverage: 0 };
+  const autoSettings = data.autoSettings || { mode: 'full', target_chain: 'A', epitope_source: 'manual' };
+
   const prompt = `
 당신은 백신학 및 구조생물학(Computational Vaccinology) 전문 AI 분석관입니다.
 아래 제공된 단백질 3차원 구조 비교 분석 데이터를 바탕으로, 연구자와 학생을 위한 정밀 평가 보고서를 작성해 주십시오.
 
 [데이터 요약]
-- 종합 모방 적합도 점수: ${data.finalScore.toFixed(2)}점 / 100점 (판정 등급: ${data.grade})
-- 전체 골격 유사도 (S_global): ${(data.subScores.s_global * 100).toFixed(1)}% (TM-score 타겟: ${data.alignment.tm_score_target_norm.toFixed(4)}, 후보: ${data.alignment.tm_score_candidate_norm.toFixed(4)})
-- 에피톱 국소 모방도 (S_epi): ${(data.subScores.s_epi * 100).toFixed(1)}% (에피톱 Cα 중첩 RMSD: ${data.alignment.rmsd.toFixed(2)} Å)
-- 용매 접근 표면적 일치율 (S_exp): ${(data.subScores.s_exp * 100).toFixed(1)}% (Shrake-Rupley SASA 기준)
-- 구조 신뢰도 지수 (S_conf): ${(data.subScores.s_conf * 100).toFixed(1)}%
-- 정렬 정보: 총 ${data.alignment.aligned_length}개 잔기 정렬 (커버리지 ${(data.alignment.coverage * 100).toFixed(1)}%), 분석 체인: ${data.autoSettings.target_chain}체인
+- 종합 모방 적합도 점수: ${finalScore.toFixed(2)}점 / 100점 (판정 등급: ${grade})
+- 전체 골격 유사도 (S_global): ${(subScores.s_global * 100).toFixed(1)}% (TM-score 타겟: ${alignment.tm_score_target_norm.toFixed(4)}, 후보: ${alignment.tm_score_candidate_norm.toFixed(4)})
+- 에피톱 국소 모방도 (S_epi): ${(subScores.s_epi * 100).toFixed(1)}% (에피톱 Cα 중첩 RMSD: ${alignment.rmsd.toFixed(2)} Å)
+- 용매 접근 표면적 일치율 (S_exp): ${(subScores.s_exp * 100).toFixed(1)}% (Shrake-Rupley SASA 기준)
+- 구조 신뢰도 지수 (S_conf): ${subScores.s_conf !== null && subScores.s_conf !== undefined ? `${(subScores.s_conf * 100).toFixed(1)}%` : '해당 없음 (실험 결정 구조)'}
+- 정렬 정보: 총 ${alignment.aligned_length}개 잔기 정렬 (커버리지 ${(alignment.coverage * 100).toFixed(1)}%), 분석 체인: ${autoSettings.target_chain}체인
 
 [서식 규칙 (Strict Tagging Specification)]
 ★ 마크다운 특수기호(###, **, ***, ---, $, \\text{} 등)를 일절 사용하지 마십시오.
 ★ 오직 아래 지정된 정형 태그 규격만을 순서대로 사용하여 리포트를 작성하십시오:
 
-[HEADER]2026 SSEP_TEAM SSBD(씁뜩) 항원성 모방도 정밀 평가 보고서 - ${data.autoSettings.target_chain}체인 분석 요약[/HEADER]
+[HEADER]2026 SSEP_TEAM SSBD(씁뜩) 항원성 모방도 정밀 평가 보고서 - ${autoSettings.target_chain}체인 분석 요약[/HEADER]
 [SECTION: 1. 점수 체계의 구체적 의미와 생물학적 해석]
-[METRIC: 전체 골격 유사도 S_global ${(data.subScores.s_global * 100).toFixed(1)}%]
+[METRIC: 전체 골격 유사도 S_global ${(subScores.s_global * 100).toFixed(1)}%]
 [EXPLAIN]TM-score 수치가 의미하는 단백질 도메인 3D 폴딩 보존성과 스캐폴드 안정성 해설 (2~3문장)[/EXPLAIN]
-[METRIC: 에피톱 국소 모방도 S_epi ${(data.subScores.s_epi * 100).toFixed(1)}% (RMSD ${data.alignment.rmsd.toFixed(2)}Å)]
+[METRIC: 에피톱 국소 모방도 S_epi ${(subScores.s_epi * 100).toFixed(1)}% (RMSD ${alignment.rmsd.toFixed(2)}Å)]
 [EXPLAIN]RMSD와 국소 모방도 수치가 의미하는 중화항체 결합 포켓의 원자 수준 정밀도 해설 (2~3문장)[/EXPLAIN]
-[METRIC: 용매 접근 표면적 일치율 S_exp ${(data.subScores.s_exp * 100).toFixed(1)}%]
+[METRIC: 용매 접근 표면적 일치율 S_exp ${(subScores.s_exp * 100).toFixed(1)}%]
 [EXPLAIN]SASA 일치율이 의미하는 항체 접근 가능 표면 노출도 보존성 및 매몰 위험 진단 (2~3문장)[/EXPLAIN]
-[METRIC: 구조 신뢰도 지수 S_conf ${(data.subScores.s_conf * 100).toFixed(1)}%]
+[METRIC: 구조 신뢰도 지수 S_conf ${subScores.s_conf !== null && subScores.s_conf !== undefined ? `${(subScores.s_conf * 100).toFixed(1)}%` : '해당 없음 (실험 결정 구조)'}]
 [EXPLAIN]구조 모델의 물리화학적 신뢰도 및 유연성 평가 (2~3문장)[/EXPLAIN]
 [/SECTION]
 [SECTION: 2. 항원 결정기(Epitope) 3D 보존성 및 결합 포켓 분석]

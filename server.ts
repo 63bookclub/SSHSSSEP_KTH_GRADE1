@@ -1326,8 +1326,60 @@ app.get('/api/v1/downloads/:job_id/aligned.pdb', (req, res) => {
 // 8. POST /api/v1/ai-insights
 app.post('/api/v1/ai-insights', async (req, res) => {
   try {
-    const data: AiInsightRequest = req.body;
-    const insightText = await generateAiInsight(data);
+    const { job_id } = req.body;
+    if (!job_id || typeof job_id !== 'string') {
+      return res.status(400).json({ error: 'job_id가 누락되었거나 유효하지 않습니다.' });
+    }
+
+    const job = jobsStore.get(job_id);
+    if (!job || !job.result) {
+      return res.status(404).json({ error: '해당 job_id의 저장된 분석 결과를 찾을 수 없습니다.' });
+    }
+
+    const evalRes = job.result;
+    const sub = (evalRes.subScores || {}) as any;
+    const align = (evalRes.alignment || {}) as any;
+    const auto = (evalRes.autoSettings || {}) as any;
+    const candidate = candidatesStore.get(job.candidateId);
+    const isExperimental = auto.isExperimentalCandidate ?? candidate?.isExperimental ?? false;
+
+    // Calculate dynamic grade from server-stored final score
+    const finalScore = evalRes.finalFitnessScore ?? 0;
+    let grade = '낮음 (Low)';
+    if (finalScore >= 75.0) grade = '높음 (High)';
+    else if (finalScore >= 50.0) grade = '중간 (Moderate)';
+
+    if (auto.isTemporaryEpitope) {
+      grade += ' (임시 에피톱)';
+    } else if (auto.isSimulated || candidate?.isSimulated) {
+      grade += ' (모사 구조)';
+    }
+
+    const validatedData: AiInsightRequest = {
+      job_id,
+      finalScore,
+      grade,
+      subScores: {
+        s_global: sub.s_global ?? sub.sGlobal ?? 0,
+        s_epi: sub.s_epi ?? sub.sEpi ?? 0,
+        s_exp: sub.s_exp ?? sub.sExp ?? 0,
+        s_conf: isExperimental ? null : (sub.s_conf ?? sub.sConf ?? 0),
+      },
+      alignment: {
+        tm_score_target_norm: align.tm_score_target_norm ?? align.tmScoreTargetNorm ?? 0,
+        tm_score_candidate_norm: align.tm_score_candidate_norm ?? align.tmScoreCandidateNorm ?? 0,
+        rmsd: align.rmsd ?? 0,
+        aligned_length: align.aligned_length ?? align.alignedLength ?? 0,
+        coverage: align.coverage ?? 0,
+      },
+      autoSettings: {
+        mode: auto.mode || 'full',
+        target_chain: job.targetChain || auto.target_chain || auto.targetChain || 'A',
+        epitope_source: auto.epitope_source || auto.epitopeSource || 'manual',
+      },
+    };
+
+    const insightText = await generateAiInsight(validatedData);
     res.json({ insight: insightText });
   } catch (err: any) {
     console.error('AI Insight endpoint error:', err);

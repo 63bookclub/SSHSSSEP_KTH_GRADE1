@@ -57,17 +57,28 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const [copiedAi, setCopiedAi] = useState<boolean>(false);
 
   // Dynamic score recalculation based on slider weights
+  const isExperimental = result.auto_settings.is_experimental_candidate;
   const [wGlobal = 0.25, wEpi = 0.40, wExp = 0.20, wConf = 0.15] = weights || [];
-  const totalWeight = wGlobal + wEpi + wExp + wConf || 1.0;
-  const normW = [wGlobal / totalWeight, wEpi / totalWeight, wExp / totalWeight, wConf / totalWeight];
+  const rawW = [wGlobal, wEpi, wExp, wConf];
+  let normW: number[];
+  if (isExperimental) {
+    const sumW = (rawW[0] || 0) + (rawW[1] || 0) + (rawW[2] || 0);
+    normW = sumW > 0
+      ? [(rawW[0] || 0) / sumW, (rawW[1] || 0) / sumW, (rawW[2] || 0) / sumW, 0]
+      : [1 / 3, 1 / 3, 1 / 3, 0];
+  } else {
+    const sumW = (rawW[0] || 0) + (rawW[1] || 0) + (rawW[2] || 0) + (rawW[3] || 0) || 1.0;
+    normW = [(rawW[0] || 0) / sumW, (rawW[1] || 0) / sumW, (rawW[2] || 0) / sumW, (rawW[3] || 0) / sumW];
+  }
 
   const sGlobal = result.sub_scores?.s_global ?? 0;
   const sEpi = result.sub_scores?.s_epi ?? 0;
   const sExp = result.sub_scores?.s_exp ?? 0;
-  const sConf = result.sub_scores?.s_conf ?? 0;
+  const sConfRaw = result.sub_scores?.s_conf;
+  const sConf = sConfRaw === null || sConfRaw === undefined ? null : sConfRaw;
 
   const dynamicScore = Math.round(
-    100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + normW[3] * sConf) * 100
+    100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + (isExperimental ? 0 : normW[3] * (sConf ?? 0))) * 100
   ) / 100;
 
   const isSimulatedStructure =
@@ -93,17 +104,12 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     setIsAiLoading(true);
     setAiError('');
     try {
+      const jobId = jobResult.job_id;
+      if (!jobId) {
+        throw new Error('job_id가 없습니다.');
+      }
       const res = await fetchAiInsight({
-        finalScore: dynamicScore,
-        grade: gradeBadge.label,
-        subScores: {
-          s_global: sGlobal,
-          s_epi: sEpi,
-          s_exp: sExp,
-          s_conf: sConf,
-        },
-        alignment: result.alignment,
-        autoSettings: result.auto_settings,
+        job_id: jobId,
       });
       setAiInsight(res.insight);
     } catch (err: any) {
@@ -144,19 +150,19 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     {
       name: 'S_epi 강조 (+20% 에피톱 모방)',
       w: [normW[0] * 0.9, normW[1] * 1.2, normW[2] * 0.9, normW[3] * 0.9],
-      score: Math.round(100 * ((normW[0] * 0.9) * sGlobal + (normW[1] * 1.2) * sEpi + (normW[2] * 0.9) * sExp + (normW[3] * 0.9) * sConf) / (normW[0]*0.9 + normW[1]*1.2 + normW[2]*0.9 + normW[3]*0.9) * 100) / 100,
+      score: Math.round(100 * ((normW[0] * 0.9) * sGlobal + (normW[1] * 1.2) * sEpi + (normW[2] * 0.9) * sExp + (isExperimental ? 0 : (normW[3] * 0.9) * (sConf ?? 0))) / (normW[0]*0.9 + normW[1]*1.2 + normW[2]*0.9 + (isExperimental ? 0 : normW[3]*0.9)) * 100) / 100,
       diff: '',
     },
     {
       name: 'S_global 강조 (+20% 전체 골격)',
       w: [normW[0] * 1.2, normW[1] * 0.9, normW[2] * 0.9, normW[3] * 0.9],
-      score: Math.round(100 * ((normW[0] * 1.2) * sGlobal + (normW[1] * 0.9) * sEpi + (normW[2] * 0.9) * sExp + (normW[3] * 0.9) * sConf) / (normW[0]*1.2 + normW[1]*0.9 + normW[2]*0.9 + normW[3]*0.9) * 100) / 100,
+      score: Math.round(100 * ((normW[0] * 1.2) * sGlobal + (normW[1] * 0.9) * sEpi + (normW[2] * 0.9) * sExp + (isExperimental ? 0 : (normW[3] * 0.9) * (sConf ?? 0))) / (normW[0]*1.2 + normW[1]*0.9 + normW[2]*0.9 + (isExperimental ? 0 : normW[3]*0.9)) * 100) / 100,
       diff: '',
     },
     {
       name: 'S_exp 강조 (+20% 노출도)',
       w: [normW[0] * 0.9, normW[1] * 0.9, normW[2] * 1.2, normW[3] * 0.9],
-      score: Math.round(100 * ((normW[0] * 0.9) * sGlobal + (normW[1] * 0.9) * sEpi + (normW[2] * 1.2) * sExp + (normW[3] * 0.9) * sConf) / (normW[0]*0.9 + normW[1]*0.9 + normW[2]*1.2 + normW[3]*0.9) * 100) / 100,
+      score: Math.round(100 * ((normW[0] * 0.9) * sGlobal + (normW[1] * 0.9) * sEpi + (normW[2] * 1.2) * sExp + (isExperimental ? 0 : (normW[3] * 0.9) * (sConf ?? 0))) / (normW[0]*0.9 + normW[1]*0.9 + normW[2]*1.2 + (isExperimental ? 0 : normW[3]*0.9)) * 100) / 100,
       diff: '',
     },
   ].map((row, idx) => {
@@ -441,19 +447,23 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
                 <span className="font-bold text-amber-300 flex items-center space-x-1">
                   <TermTooltip termKey="plddt">S_conf (예측 신뢰도)</TermTooltip>
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">가중치 {Math.round(normW[3] * 100)}%</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {isExperimental ? '가중치 0% (N/A)' : `가중치 ${Math.round(normW[3] * 100)}%`}
+                </span>
               </div>
               <div className="text-2xl font-bold font-mono text-white my-1">
-                {sConf.toFixed(3)}
+                {sConf !== null ? sConf.toFixed(3) : '해당 없음'}
               </div>
               <p className="text-[11px] text-slate-400 leading-snug">
-                에피톱 잔기 중 pLDDT ≥ 70 이상인 비율입니다. (실험 결정 구조 후보는 1.0 만점 부여)
+                {isExperimental
+                  ? '실험 결정 구조 후보이므로 S_conf는 해당 없으며, 가중치가 타 지표(S_global, S_epi, S_exp)로 재분배되었습니다.'
+                  : '에피톱 잔기 중 pLDDT ≥ 70 이상인 비율입니다.'}
               </p>
             </div>
             <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
               <div
                 className="bg-amber-400 h-full rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, sConf * 100)}%` }}
+                style={{ width: `${sConf !== null ? Math.min(100, sConf * 100) : 0}%` }}
               ></div>
             </div>
           </div>

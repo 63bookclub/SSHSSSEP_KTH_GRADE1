@@ -378,6 +378,28 @@ END
     expect(evalResult.finalFitnessScore).toBeLessThanOrEqual(100);
   });
 
+  it('should handle S_conf as N/A and redistribute weights for experimental candidate structures', () => {
+    const targetPdb = `
+ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C
+ATOM      2  CA  GLY A 101     3.800   0.000   0.000  1.00 85.00           C
+TER
+END
+`.trim();
+
+    const targetStruct = parsePdb(targetPdb);
+    const targetRes = targetStruct.residuesByChain['A'];
+    const alignment = alignStructures(targetRes, targetRes);
+
+    // Evaluate with isExperimentalCandidate = true and initial weights [0.25, 0.40, 0.20, 0.15]
+    const evalResult = evaluateAntigenicMimicry(alignment, [100, 101], true, [0.25, 0.40, 0.20, 0.15]);
+
+    expect(evalResult.subScores.s_conf).toBeNull();
+    // Sum of first 3 weights = 0.85. Normalized: 0.25/0.85 ≈ 0.2941, 0.40/0.85 ≈ 0.4706, 0.20/0.85 ≈ 0.2353, w3 = 0
+    expect(evalResult.weights[3]).toBe(0);
+    expect(evalResult.weights[0] + evalResult.weights[1] + evalResult.weights[2]).toBeCloseTo(1.0, 5);
+    expect(evalResult.evaluationRationale).toContain('S_conf = 해당 없음');
+  });
+
   it('should normalize custom weights passed to evaluateAntigenicMimicry', () => {
     const targetPdb = `
 ATOM      1  CA  ALA A 100     0.000   0.000   0.000  1.00 80.00           C

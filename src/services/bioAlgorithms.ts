@@ -1202,7 +1202,7 @@ export interface EvaluationResult {
     s_global: number;
     s_epi: number;
     s_exp: number;
-    s_conf: number;
+    s_conf: number | null;
   };
   weights: [number, number, number, number];
   finalFitnessScore: number;
@@ -1456,18 +1456,32 @@ export function evaluateAntigenicMimicry(
     sExp = Math.max(0.0, Math.min(1.0, 1.0 - meanDiff));
   }
 
-  // 3. S_conf: fraction of epitope residues with pLDDT >= 70 (or 1.0 if experimental)
+  // 3. S_conf: fraction of epitope residues with pLDDT >= 70 (or null/N/A if experimental)
   const sConf = isExperimentalCandidate
-    ? 1.0
+    ? null
     : totalEpitopeCount > 0
     ? confHighCount / totalEpitopeCount
     : 0.85;
 
   // 4. Final fitness score
   const weightVal = validateAndNormalizeWeights(customWeights);
-  const normalizedWeights = weightVal.normalizedWeights;
+  let normalizedWeights = weightVal.normalizedWeights;
+
+  if (isExperimentalCandidate) {
+    // For experimental structures, S_conf is N/A. Set w3 = 0 and redistribute w0, w1, w2 proportionally.
+    const [origW0, origW1, origW2] = normalizedWeights;
+    const sumW = origW0 + origW1 + origW2;
+    if (sumW > 0) {
+      normalizedWeights = [origW0 / sumW, origW1 / sumW, origW2 / sumW, 0];
+    } else {
+      normalizedWeights = [1 / 3, 1 / 3, 1 / 3, 0];
+    }
+  }
+
   const [w0, w1, w2, w3] = normalizedWeights;
-  const rawScore = 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * sConf);
+  const rawScore = isExperimentalCandidate
+    ? 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp)
+    : 100 * (w0 * sGlobal + w1 * sEpi + w2 * sExp + w3 * (sConf ?? 0));
   const finalFitnessScore = Math.round(rawScore * 100) / 100;
 
   // Rule-based deterministic deeply detailed scientific rationale (100% reproducible for science fair / thesis)
@@ -1508,7 +1522,7 @@ export function evaluateAntigenicMimicry(
     .map(r => `${r.res_name}${r.res_id}`)
     .join(', ');
 
-  const highConfPercent = Math.round(sConf * 100);
+  const highConfPercent = sConf !== null ? Math.round(sConf * 100) : 0;
 
   const rationaleSections: string[] = [
     `【1. 종합 판정 요약】\n• 최종 항원성 모방 적합도: ${finalFitnessScore.toFixed(2)}점 / 100점 [등급: ${level}${gradeContextNote}]\n• 등급 산출 근거: 75점 이상(높음 - B세포/항체 교차 반응 유도 우수), 50점 이상(중간 - 일부 서열/구조 보완 필요), 50점 미만(낮음 - 모방도 저하)\n• 분석 모드: ${isFragment ? '단편 정규화 (Fragment Mode)' : '전체 골격 정규화 (Full Mode)'} | 타겟 분석 체인: ${targetChain}체인 | 에피톱 잔기 수: ${effectiveEpitopeSet.size}개`,
@@ -1519,7 +1533,9 @@ export function evaluateAntigenicMimicry(
 
     `\n【4. 용매 접근 표면적(RSA) 및 체액성 면역 노출도 분석 (S_exp = ${(sExp * 100).toFixed(1)}%)】\n• Shrake-Rupley 구면 적분 기반 상대적 용매 접근도(RSA) 일치율: ${(sExp * 100).toFixed(1)}%\n• 표면 매몰 위험 잔기(타겟 노출 대비 후보에서 가려진 잔기): ${buriedResidues || '없음 (항체 접근 표면 노출 패턴이 타겟과 일치함)'}\n• 면역 노출도 평가: ${sExp >= 0.75 ? '체액 내 B세포 수용체(BCR) 및 순환 항체가 에피톱에 물리적으로 접근할 수 있는 개방형 표면 구조를 유지하고 있습니다.' : '일부 핵심 잔기가 분자 내부로 매몰되거나 가려져 있어 실제 면역 반응 시 항체 형성 효율이 저하될 위험이 있습니다.'}`,
 
-    `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = ${(sConf * 100).toFixed(1)}%)】\n• 에피톱 영역 고신뢰도 잔기 비율 (pLDDT ≥ 70): ${isExperimentalCandidate ? '100% (X-선/Cryo-EM 실험 결정 구조 PDB)' : `${highConfPercent}%`}\n• 신뢰도 진단: ${sConf >= 0.85 ? '에피톱 영역의 예측 불확실성이 극히 낮아 컴퓨터 시뮬레이션 결과의 신뢰성이 매우 높습니다.' : '에피톱 부위에 유연한 고리(Loop) 또는 비정형 구간이 포함되어 있어 추가적인 실험 검증이 권장됩니다.'}`,
+    isExperimentalCandidate
+      ? `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = 해당 없음)】\n• 에피톱 영역 고신뢰도 잔기 비율: 해당 없음 (X-선/Cryo-EM 등 실험 결정 구조 PDB이므로 pLDDT 신뢰도 지표가 적용되지 않음. 가중치가 재분배되었습니다.)\n• 신뢰도 진단: 실험 구조를 사용하므로 예측 불확실성 평가(S_conf)는 해당 없음 처리되었습니다.`
+      : `\n【5. 예측 모델 구조 신뢰도 및 국소 유연성 분석 (S_conf = ${((sConf ?? 0) * 100).toFixed(1)}%)】\n• 에피톱 영역 고신뢰도 잔기 비율 (pLDDT ≥ 70): ${Math.round((sConf ?? 0) * 100)}%\n• 신뢰도 진단: ${(sConf ?? 0) >= 0.85 ? '에피톱 영역의 예측 불확실성이 극히 낮아 컴퓨터 시뮬레이션 결과의 신뢰성이 매우 높습니다.' : '에피톱 부위에 유연한 고리(Loop) 또는 비정형 구간이 포함되어 있어 추가적인 실험 검증이 권장됩니다.'}`,
 
     `\n【6. 연구자 가이드 및 후속 실험 제언 (Recommendations)】\n• 면역원성 최적화: ${finalFitnessScore >= 75 ? '현재 후보 물질의 3D 에피톱 형태가 우수하므로 SPR/BLI 결합력 측정 또는 동물 면역원성 평가 단계로 진행할 가치가 높습니다.' : '편차가 크게 발생한 잔기 부위를 타겟 서열 기반으로 재설계(Residue Back-mutation)하여 국소 모방도를 개선할 것을 권장합니다.'}\n• 추천 검증 실험: 표면 플라스몬 공명(SPR) 또는 ELISA 기반 결합 친화도 측정, Cryo-EM 고해상도 복합체 구조 분석.`
   ];
@@ -1552,7 +1568,7 @@ export function evaluateAntigenicMimicry(
       s_global: Math.round(sGlobal * 1000) / 1000,
       s_epi: Math.round(sEpi * 1000) / 1000,
       s_exp: Math.round(sExp * 1000) / 1000,
-      s_conf: Math.round(sConf * 1000) / 1000,
+      s_conf: sConf === null ? null : Math.round(sConf * 1000) / 1000,
     },
     weights: normalizedWeights,
     finalFitnessScore,
