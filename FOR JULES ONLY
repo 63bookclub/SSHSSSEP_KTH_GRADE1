@@ -1,5 +1,3 @@
-• 보안 헤더와 CORS 설정이 없음. helmet 등으로 기본 헤더를 추가하고, 필요한 출처만 허용해야 함
-• start 스크립트가 운영 모드로 실행되지 않음. "start": "tsx server.ts"는 NODE_ENV를 설정하지 않아서 운영 환경에서도 Vite 개발 서버가 돌아감. NODE_ENV=production 지정과 build 선행이 필요함
 • 명세서와 구현이 다른 스택임. 명세서 v3는 Python/FastAPI/US-align이고 코드는 Node/Express/TypeScript의 자체 구현. 하나로 정하고 문서를 맞춰야 함. 공식 도구를 쓰려면 US-align 실행 파일을 서버에 설치하고 child_process.execFile(쉘 없이, 타임아웃 포함)로 호출하는 방법이 가장 단순함
 • 안 쓰는 설정이 남아 있음. @google/genai는 코드에서 import하는 곳이 없는데 package.json, metadata.json(서버 측 Gemini API), .env.example에 남아 있고 실제로는 Groq만 사용함. 제거해야 함
 • package.json 이름이 react-example 그대로이고, README와 LICENSE가 없음
