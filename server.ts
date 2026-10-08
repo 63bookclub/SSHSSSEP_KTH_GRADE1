@@ -1,4 +1,6 @@
 import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import {
   parsePdb,
@@ -41,6 +43,8 @@ import { handleApiError } from './src/utils/errorHandler.ts';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors());
 app.use(express.json({ limit: MAX_BODY_PAYLOAD_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_BODY_PAYLOAD_SIZE }));
 
