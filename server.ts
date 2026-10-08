@@ -1,4 +1,6 @@
 import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import {
   parsePdb,
@@ -40,6 +42,32 @@ import { handleApiError } from './src/utils/errorHandler.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Security headers with helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Allow Vite dev scripts & 3Dmol canvas rendering
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// CORS configuration to restrict allowed origins
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS 정책에 의해 허용되지 않은 출처(Origin)입니다.'));
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: MAX_BODY_PAYLOAD_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_BODY_PAYLOAD_SIZE }));
