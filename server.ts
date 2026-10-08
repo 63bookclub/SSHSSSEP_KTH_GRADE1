@@ -37,9 +37,12 @@ import {
   checkBatchCandidatesLimit,
 } from './src/utils/limits.ts';
 import { handleApiError } from './src/utils/errorHandler.ts';
+import { setupSecurityMiddleware } from './src/middleware/security.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+setupSecurityMiddleware(app);
 
 app.use(express.json({ limit: MAX_BODY_PAYLOAD_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_BODY_PAYLOAD_SIZE }));
