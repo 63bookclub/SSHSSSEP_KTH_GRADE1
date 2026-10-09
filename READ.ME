@@ -112,6 +112,12 @@ $$S_{conf} = \frac{N(\text{pLDDT} \ge 70.0)}{N_{total}}$$
 
 ## 4. 시스템 아키텍처 및 디렉토리 구조 (System Architecture)
 
+### 🛠️ 기술 스택 단일화 명세 (Technology Stack Standardization)
+본 프로젝트는 **Node.js / Express / TypeScript** 단일 런타임 스택으로 명세와 구현을 완전히 통일하였습니다.
+- **백엔드 & 바이오 알고리즘 Engine**: pure TypeScript (`src/services/bioAlgorithms.ts`) 기반 Kabsch SVD 3D 구조 중첩, Shrake-Rupley SASA, TM-score 및 4대 항원 모방도 정량 점수 계산
+- **프론트엔드**: React 19, Vite, Tailwind CSS v4, 3Dmol.js
+- **외부 CLI 연동 확장성**: 공식 US-align / TM-align C++ 실행 파일 연동 필요 시 `child_process.execFile`(쉘 미사용, 타임아웃 및 샌드박싱 적용) 모듈 방식으로 호출 지원
+
 ```
 ssbd-2026/
 ├── server.ts                       # Express 백엔드 API 서버 (Vite 미들웨어 통합)
