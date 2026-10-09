@@ -7,6 +7,7 @@ import {
   parsePdb,
 } from './bioAlgorithms.ts';
 import { mapComplexResiduesToTarget } from './siftsService.ts';
+import { fetchPdbStructure } from './structureLoader.ts';
 
 export interface ResolveEpitopeOptions {
   targetStructure: ParsedStructure;
@@ -177,35 +178,9 @@ export async function resolveEpitopeInput(
 
     try {
       const cleanPdbId = complexPdbId.trim().toUpperCase();
-      const cifUrl = `https://files.rcsb.org/download/${cleanPdbId}.cif`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
-
-      let complexText = '';
-      try {
-        const resp = await fetch(cifUrl, { signal: controller.signal });
-        if (resp.ok) {
-          const txt = await resp.text();
-          if (!txt.trim().startsWith('<')) {
-            complexText = txt;
-          }
-        }
-        if (!complexText) {
-          const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
-          const fbResp = await fetch(pdbUrl, { signal: controller.signal });
-          if (fbResp.ok) {
-            const txt = await fbResp.text();
-            if (!txt.trim().startsWith('<')) {
-              complexText = txt;
-            }
-          }
-        }
-        if (!complexText) {
-          throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (404 또는 유효하지 않은 PDB/CIF 응답)`);
-        }
-      } finally {
-        clearTimeout(timeoutId);
+      const complexText = await fetchPdbStructure(cleanPdbId, fetchTimeoutMs);
+      if (!complexText) {
+        throw new Error(`RCSB에서 복합체 ${cleanPdbId} 다운로드 실패 (404 또는 유효하지 않은 PDB/CIF 응답)`);
       }
 
       const complexStruct = complexText.includes('_atom_site.')

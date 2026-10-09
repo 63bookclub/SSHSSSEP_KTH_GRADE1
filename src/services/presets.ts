@@ -93,6 +93,7 @@ export interface PresetItem {
     type: 'pdb' | 'uniprot';
     identifier: string;
     chain: string;
+    localPdbPath?: string;
   };
   epitope: {
     method: 'manual' | 'complex' | 'prediction_csv';
@@ -106,6 +107,7 @@ export interface PresetItem {
     name: string;
     sequence: string;
     type: 'fasta' | 'pdb';
+    pdbId?: string;
     pdbText?: string;
     isExperimental?: boolean;
     note: string;
@@ -124,6 +126,7 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       type: 'pdb',
       identifier: '6M0J',
       chain: 'E',
+      localPdbPath: '/pdb/6M0J.pdb',
     },
     epitope: {
       method: 'manual',
@@ -131,11 +134,13 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       description: 'ACE2 결합 모티프(RBM) 및 중화항체 결합 핵심 잔기(400~505)',
     },
     candidate: {
-      name: 'Spike RBD Prototype Candidate (aa 333-526)',
+      name: 'Spike RBD Prototype Candidate (6M0J Chain E)',
       sequence:
         'TNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKSTNLVKNKCVNF',
-      type: 'fasta',
-      note: '우한 프로토타입 서열 194 아미노산',
+      type: 'pdb',
+      pdbId: '6M0J',
+      isExperimental: true,
+      note: '실제 RCSB 결정 구조 6M0J 내장 데이터 사용',
     },
     expectedOutcome: 'TM-score ~ 0.98+, S_epi ~ 0.95+, 최종 점수 95점 이상의 높은 구조 모방도 예상',
   },
@@ -227,6 +232,7 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       type: 'pdb',
       identifier: '6M0J',
       chain: 'E',
+      localPdbPath: '/pdb/6M0J.pdb',
     },
     epitope: {
       method: 'manual',
@@ -259,11 +265,13 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       description: '타겟 스파이크 에피톱 잔기',
     },
     candidate: {
-      name: 'Egg White Lysozyme (Unrelated Protein)',
+      name: 'Egg White Lysozyme (1AKI Chain A)',
       sequence:
         'KVFGRCELAAAMKRHGLDNYRGYSLGNWVCAAKFESNFNTQATNRNTDGSTDYGILQINSRWWCNDGRTPGSRNLCNIPCSALLSSDITASVNCAKKIVSDGNGMNAWVAWRNRCKGTDVQAWIRGCRL',
-      type: 'fasta',
-      note: '닭 난백 리소자임 129 aa',
+      type: 'pdb',
+      pdbId: '1AKI',
+      isExperimental: true,
+      note: '닭 난백 리소자임 1AKI 내장 PDB 데이터 사용',
     },
     expectedOutcome: 'TM-score < 0.25 (무작위 접힘 수준), S_epi < 0.20, 종합 점수 최하위 (위양성 배제)',
   },
