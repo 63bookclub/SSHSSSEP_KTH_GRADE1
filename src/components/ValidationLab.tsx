@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { ShieldCheck, CheckCircle2, AlertTriangle, ArrowRight, Play, RefreshCw, BarChart2, Beaker, FileSpreadsheet } from 'lucide-react';
-import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from '../services/presets.ts';
+import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { PRESET_STRUCTURES } from '../data/presetStructures.ts';
+import {
+  applyNoiseToPdb,
+  applyRigidTransformToPdb,
+  truncatePdbResidues,
+} from '../utils/pdbTransformations.ts';
 import {
   parsePdb,
   alignStructures,
   evaluateAntigenicMimicry,
   calculateSASA,
-  computeKabsch,
 } from '../services/bioAlgorithms.ts';
 
 interface ValidationResultRow {
@@ -33,19 +38,29 @@ export const ValidationLab: React.FC<{
     setIsRunning(true);
     const suite: ValidationResultRow[] = [];
 
-    // Base sequence (Spike RBD 6M0J Chain E fragment, 100 aa)
-    const baseSeq = PRESET_BENCHMARKS[0].candidate.sequence.substring(0, 100);
-    const epitopeResidues = [10, 11, 12, 13, 14, 15, 20, 21, 22, 35, 36, 45, 50, 60, 70, 80];
+    // Base real structure (Spike RBD 6M0J Chain E)
+    const basePdbText = PRESET_STRUCTURES['6M0J_E'] || PRESET_STRUCTURES['6M0J_FULL'];
+    const lysozymePdbText = PRESET_STRUCTURES['1AKI_A'] || PRESET_STRUCTURES['1AKI_FULL'];
+
+    // Epitope residues corresponding to ACE2 RBM region in 6M0J Chain E (400 to 505)
+    const epitopeResidues = [
+      400, 417, 440, 446, 453, 455, 456, 473, 475, 476, 484, 486, 487, 489, 493, 496, 498, 500, 501, 502, 505
+    ];
 
     // 1. Self comparison (Identity test)
     try {
-      const pdbText = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const targetStruct = parsePdb(pdbText);
-      const candStruct = parsePdb(pdbText);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const targetStruct = parsePdb(basePdbText);
+      const candStruct = parsePdb(basePdbText);
+      const targetChainKey = targetStruct.chains[0] || 'E';
+      const candChainKey = candStruct.chains[0] || 'E';
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain[targetChainKey]);
+      calculateSASA(candStruct.residuesByChain[candChainKey]);
+
+      const align = alignStructures(
+        targetStruct.residuesByChain[targetChainKey],
+        candStruct.residuesByChain[candChainKey]
+      );
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
@@ -66,15 +81,19 @@ export const ValidationLab: React.FC<{
 
     // 2. Rigid body rotation/translation (SE(3) invariance test)
     try {
-      const pdbText1 = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      // Rotated and shifted coordinate set
-      const pdbText2 = generateAlphaHelixPdb(baseSeq, 'A', 1, [50.0, -35.0, 80.0], 95.0, 0.0);
-      const targetStruct = parsePdb(pdbText1);
-      const candStruct = parsePdb(pdbText2);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const pdbTransformed = applyRigidTransformToPdb(basePdbText, [50.0, -35.0, 80.0], 45);
+      const targetStruct = parsePdb(basePdbText);
+      const candStruct = parsePdb(pdbTransformed);
+      const targetChainKey = targetStruct.chains[0] || 'E';
+      const candChainKey = candStruct.chains[0] || 'E';
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain[targetChainKey]);
+      calculateSASA(candStruct.residuesByChain[candChainKey]);
+
+      const align = alignStructures(
+        targetStruct.residuesByChain[targetChainKey],
+        candStruct.residuesByChain[candChainKey]
+      );
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
@@ -99,14 +118,19 @@ export const ValidationLab: React.FC<{
     let monotonicityMaintained = true;
 
     for (const noise of noiseLevels) {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const pdbNoisy = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 85.0, noise);
-      const targetStruct = parsePdb(pdbTarget);
+      const pdbNoisy = applyNoiseToPdb(basePdbText, noise);
+      const targetStruct = parsePdb(basePdbText);
       const candStruct = parsePdb(pdbNoisy);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const targetChainKey = targetStruct.chains[0] || 'E';
+      const candChainKey = candStruct.chains[0] || 'E';
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain[targetChainKey]);
+      calculateSASA(candStruct.residuesByChain[candChainKey]);
+
+      const align = alignStructures(
+        targetStruct.residuesByChain[targetChainKey],
+        candStruct.residuesByChain[candChainKey]
+      );
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       if (evalRes.finalFitnessScore >= prevScore) {
@@ -130,15 +154,20 @@ export const ValidationLab: React.FC<{
 
     // 4. Candidate Truncation test (Fragment mode)
     try {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const truncatedSeq = baseSeq.substring(0, 40); // 40% length (< 70% threshold)
-      const pdbTrunc = generateAlphaHelixPdb(truncatedSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
-      const targetStruct = parsePdb(pdbTarget);
+      // Truncate to ~60 residues out of 194 (< 70% threshold)
+      const pdbTrunc = truncatePdbResidues(basePdbText, 60);
+      const targetStruct = parsePdb(basePdbText);
       const candStruct = parsePdb(pdbTrunc);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const targetChainKey = targetStruct.chains[0] || 'E';
+      const candChainKey = candStruct.chains[0] || 'E';
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain[targetChainKey]);
+      calculateSASA(candStruct.residuesByChain[candChainKey]);
+
+      const align = alignStructures(
+        targetStruct.residuesByChain[targetChainKey],
+        candStruct.residuesByChain[candChainKey]
+      );
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
@@ -159,15 +188,18 @@ export const ValidationLab: React.FC<{
 
     // 5. Negative Control (Unrelated protein Lysozyme test)
     try {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const lysozymeSeq = PRESET_BENCHMARKS[5].candidate.sequence;
-      const pdbNegative = generateAlphaHelixPdb(lysozymeSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
-      const targetStruct = parsePdb(pdbTarget);
-      const candStruct = parsePdb(pdbNegative);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const targetStruct = parsePdb(basePdbText);
+      const candStruct = parsePdb(lysozymePdbText);
+      const targetChainKey = targetStruct.chains[0] || 'E';
+      const candChainKey = candStruct.chains[0] || 'A';
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      calculateSASA(targetStruct.residuesByChain[targetChainKey]);
+      calculateSASA(candStruct.residuesByChain[candChainKey]);
+
+      const align = alignStructures(
+        targetStruct.residuesByChain[targetChainKey],
+        candStruct.residuesByChain[candChainKey]
+      );
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
