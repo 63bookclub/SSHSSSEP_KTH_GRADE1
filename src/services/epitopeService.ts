@@ -177,14 +177,14 @@ export async function resolveEpitopeInput(
 
     try {
       const cleanPdbId = complexPdbId.trim().toUpperCase();
-      const cifUrl = `https://files.rcsb.org/download/${cleanPdbId}.cif`;
+      const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
       let complexText = '';
       try {
-        const resp = await fetch(cifUrl, { signal: controller.signal });
+        const resp = await fetch(pdbUrl, { signal: controller.signal });
         if (resp.ok) {
           const txt = await resp.text();
           if (!txt.trim().startsWith('<')) {
@@ -192,8 +192,8 @@ export async function resolveEpitopeInput(
           }
         }
         if (!complexText) {
-          const pdbUrl = `https://files.rcsb.org/download/${cleanPdbId}.pdb`;
-          const fbResp = await fetch(pdbUrl, { signal: controller.signal });
+          const cifUrl = `https://files.rcsb.org/download/${cleanPdbId}.cif`;
+          const fbResp = await fetch(cifUrl, { signal: controller.signal });
           if (fbResp.ok) {
             const txt = await fbResp.text();
             if (!txt.trim().startsWith('<')) {
