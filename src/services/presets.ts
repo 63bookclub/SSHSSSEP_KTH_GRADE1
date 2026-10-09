@@ -171,12 +171,12 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
     id: 'flu-ha-stalk',
     category: 'Flu',
     title: '인플루엔자 A 헤마글루티닌(HA) vs 범용 스템 백신',
-    subtitle: '1RUZ Chain A vs 보존적 줄기(Stem) 에피톱',
+    subtitle: '1RUZ Chain H vs 보존적 줄기(Stem) 에피톱',
     description: '변이가 심한 머리(Head) 부분을 제거하고 보존성이 높은 줄기(Stem) 에피톱만을 안정화시킨 범용 인플루엔자 백신 모방도 검증.',
     target: {
       type: 'pdb',
       identifier: '1RUZ',
-      chain: 'A',
+      chain: 'H',
     },
     epitope: {
       method: 'manual',
