@@ -6,36 +6,30 @@ import {
   parsePdb,
   parseMmcif,
   calculateSASA,
-  alignStructures,
-  generateSuperimposedPdb,
-  extractComplexContacts,
-  parseResidueRange,
-  evaluateAntigenicMimicry,
-  threadSequenceOnTemplate,
-  parseFastaInput,
   ParsedStructure,
   EvaluationResult,
   MultiEpitopeEntity,
-  Residue,
-  getResidueKey,
+  evaluateAntigenicMimicry,
+  alignStructures,
+  generateSuperimposedPdb,
 } from './src/services/bioAlgorithms.ts';
 import { mapComplexResiduesToTarget } from './src/services/siftsService.ts';
 import { resolveEpitopeInput } from './src/services/epitopeService.ts';
-import { predictStructureWithESMFold } from './src/services/esmFoldService.ts';
-import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from './src/services/presets.ts';
+import { PRESET_BENCHMARKS } from './src/services/presets.ts';
 import { generateAiInsight, AiInsightRequest } from './src/services/aiServerService.ts';
 import {
-  isValidPdbId,
-  isValidUniprotId,
-  validateAminoAcidSequence,
   validateAndNormalizeWeights,
 } from './src/utils/validation.ts';
 import { resolveTargetChain, resolveCandidateChain } from './src/services/chainService.ts';
 import {
+  loadTargetStructure,
+  loadTargetFromInputString,
+  loadCandidateStructure,
+  loadCandidateFromInputString,
+} from './src/services/structureLoader.ts';
+import { runEvaluationPipeline } from './src/services/evaluationPipeline.ts';
+import {
   MAX_BODY_PAYLOAD_SIZE,
-  MAX_BATCH_CANDIDATES,
-  MAX_STRUCTURE_ATOMS,
-  checkAtomCountLimit,
   checkBatchCandidatesLimit,
 } from './src/utils/limits.ts';
 import { handleApiError } from './src/utils/errorHandler.ts';
@@ -186,130 +180,32 @@ app.get('/api/v1/presets', (_req, res) => {
 // 2. POST /api/v1/targets
 app.post('/api/v1/targets', async (req, res) => {
   try {
-    const { uniprot_id, pdb_id, raw_content, filename } = req.body;
-    let structureText = '';
-    let sourceType: 'uniprot' | 'pdb' | 'file' = 'file';
-    let identifier = '';
-
-    if (uniprot_id) {
-      if (!isValidUniprotId(uniprot_id)) {
-        return res.status(400).json({ error: `유효하지 않은 UniProt ID 형식입니다: '${uniprot_id}'.` });
-      }
-      sourceType = 'uniprot';
-      identifier = uniprot_id.trim().toUpperCase();
-      // Fetch prediction metadata from AlphaFold DB
-      try {
-        const afMetaUrl = `https://alphafold.ebi.ac.uk/api/prediction/${identifier}`;
-        const metaRes = await fetchWithTimeout(afMetaUrl);
-        if (!metaRes.ok) {
-          throw new Error(`AlphaFold DB에서 해당 UniProt ID (${identifier})를 찾을 수 없습니다.`);
-        }
-        const metaData = await metaRes.json();
-        const entry = Array.isArray(metaData) ? metaData[0] : metaData;
-        const fileUrl = entry?.cifUrl || entry?.pdbUrl;
-        if (!fileUrl) {
-          throw new Error('AlphaFold DB 결과에 구조 파일 다운로드 URL이 포함되어 있지 않습니다.');
-        }
-
-        const fileRes = await fetchWithTimeout(fileUrl);
-        if (!fileRes.ok) throw new Error('AlphaFold 구조 파일 다운로드 실패');
-        const txt = await fileRes.text();
-        if (txt.trim().startsWith('<')) throw new Error('AlphaFold 구조 응답이 유효한 PDB/CIF 형식이 아닙니다.');
-        structureText = txt;
-      } catch (afErr: any) {
-        return res.status(400).json({
-          error: `AlphaFold DB 조회 오류: ${afErr?.message || '구조를 불러올 수 없습니다.'}. PDB ID를 입력하거나 구조 파일을 업로드해 보세요.`,
-        });
-      }
-    } else if (pdb_id) {
-      if (!isValidPdbId(pdb_id)) {
-        return res.status(400).json({ error: `유효하지 않은 PDB ID 형식입니다: '${pdb_id}'.` });
-      }
-      sourceType = 'pdb';
-      identifier = pdb_id.trim().toUpperCase();
-      try {
-        const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
-        const rcsbRes = await fetchWithTimeout(pdbUrl);
-        if (rcsbRes.ok) {
-          const txt = await rcsbRes.text();
-          if (!txt.trim().startsWith('<')) {
-            structureText = txt;
-          }
-        }
-        if (!structureText) {
-          // Fallback to .cif
-          const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
-          const cifRes = await fetchWithTimeout(cifUrl);
-          if (cifRes.ok) {
-            const txt = await cifRes.text();
-            if (!txt.trim().startsWith('<')) {
-              structureText = txt;
-            }
-          }
-        }
-        if (!structureText) {
-          throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없거나 HTML 오류 응답을 받았습니다.`);
-        }
-      } catch (rcsbErr: any) {
-        return res.status(400).json({
-          error: `RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}. 네트워크 상태를 확인하거나 PDB 파일을 직접 업로드해 주세요.`,
-        });
-      }
-    } else if (raw_content) {
-      sourceType = 'file';
-      identifier = filename || 'uploaded_structure';
-      structureText = raw_content;
-    } else {
-      return res.status(400).json({ error: 'UniProt ID, PDB ID, 또는 구조 파일(raw_content) 중 하나를 제공해야 합니다.' });
-    }
-
-    // Parse structure (PDB or mmCIF)
-    const structure = structureText.includes('_atom_site.')
-      ? parseMmcif(structureText)
-      : parsePdb(structureText);
-
-    if (structure.chains.length === 0 || structure.allAtoms.length === 0) {
-      return res.status(400).json({ error: '유효한 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다. 표준 PDB/mmCIF 파일인지 확인해 주세요.' });
-    }
-
-    const atomLimitCheck = checkAtomCountLimit(structure.allAtoms.length);
-    if (!atomLimitCheck.isWithinLimit) {
-      return res.status(400).json({ error: atomLimitCheck.error });
-    }
-
-    // Calculate SASA for all chains in full assembly context
-    const allAssemblyResidues = Object.values(structure.residuesByChain).flat();
-    for (const chain of structure.chains) {
-      const resList = structure.residuesByChain[chain] || [];
-      if (resList.length > 0) {
-        calculateSASA(resList, 1.4, 96, allAssemblyResidues);
-      }
-    }
+    const loaded = await loadTargetStructure(req.body);
 
     const targetId = 'tgt_' + crypto.randomUUID();
     const chainResidueCounts: Record<string, number> = {};
-    for (const c of structure.chains) {
-      chainResidueCounts[c] = (structure.residuesByChain[c] || []).length;
+    for (const c of loaded.structure.chains) {
+      chainResidueCounts[c] = (loaded.structure.residuesByChain[c] || []).length;
     }
 
     targetsStore.set(targetId, {
       id: targetId,
-      sourceType,
-      identifier,
-      structure,
-      chains: structure.chains,
+      sourceType: loaded.sourceType,
+      identifier: loaded.identifier,
+      structure: loaded.structure,
+      chains: loaded.structure.chains,
       chainResidueCounts,
       createdAtMs: Date.now(),
     });
 
     res.json({
       target_id: targetId,
-      source_type: sourceType,
-      identifier,
-      chains: structure.chains,
+      source_type: loaded.sourceType,
+      identifier: loaded.identifier,
+      chains: loaded.structure.chains,
       chain_residue_counts: chainResidueCounts,
-      total_atoms: structure.allAtoms.length,
-      sample_pdb: structure.rawPdb,
+      total_atoms: loaded.structure.allAtoms.length,
+      sample_pdb: loaded.structure.rawPdb,
     });
   } catch (err: any) {
     handleApiError(res, err, '타겟 구조 처리 중 오류가 발생했습니다.', 500);
@@ -388,69 +284,17 @@ app.post('/api/v1/epitopes', async (req, res) => {
 // 4. POST /api/v1/candidates
 app.post('/api/v1/candidates', async (req, res) => {
   try {
-    const { sequence, fasta_text, raw_pdb, filename, is_experimental, chain: reqChain } = req.body;
-    let structureText = '';
-    let parsedSeq = '';
-    let isExperimental = !!is_experimental;
-    let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = isExperimental ? 'experimental' : 'esmfold';
-    let isSimulated = false;
-    let sourceType: 'fasta' | 'sequence' | 'pdb' = 'sequence';
-
-    if (raw_pdb) {
-      sourceType = 'pdb';
-      structureText = raw_pdb;
-      isExperimental = true;
-      candidateSource = 'experimental';
-      isSimulated = false;
-    } else {
-      // Sequence or FASTA input
-      let rawInput = (fasta_text || sequence || '').trim();
-      if (!rawInput) {
-        return res.status(400).json({ error: '후보 물질의 서열(FASTA/단순 서열) 또는 3D 구조 파일(PDB)을 입력해야 합니다.' });
-      }
-
-      // Common sequence validation
-      const seqVal = validateAminoAcidSequence(rawInput, { minLen: 5, maxLen: 600 });
-      if (!seqVal.isValid) {
-        return res.status(400).json({ error: seqVal.error });
-      }
-      parsedSeq = seqVal.sequence;
-
-      // Use modular ESMFold service
-      const esmResult = await predictStructureWithESMFold(rawInput);
-      if (esmResult.success && esmResult.pdbText) {
-        structureText = esmResult.pdbText;
-        parsedSeq = esmResult.sequence || parsedSeq;
-        candidateSource = 'esmfold';
-        isSimulated = false;
-      } else {
-        return res.status(400).json({
-          error: `ESMFold 예측 실패: ${esmResult.error || '구조 예측에 실패했습니다.'} 외부에서 예측한 PDB(ColabFold, AlphaFold Server 등)를 직접 업로드해 주세요.`,
-        });
-      }
-    }
-
-    const structure = structureText.includes('_atom_site.')
-      ? parseMmcif(structureText)
-      : parsePdb(structureText);
-
-    if (structure.chains.length === 0) {
-      return res.status(400).json({ error: '후보 물질 구조 파싱에 실패했습니다. 유효한 PDB 좌표인지 확인해 주세요.' });
-    }
-
-    const candAtomLimitCheck = checkAtomCountLimit(structure.allAtoms.length);
-    if (!candAtomLimitCheck.isWithinLimit) {
-      return res.status(400).json({ error: candAtomLimitCheck.error });
-    }
+    const { filename, chain: reqChain } = req.body;
+    const loaded = await loadCandidateStructure(req.body);
 
     let candChain = '';
     try {
-      candChain = resolveCandidateChain(structure.chains, reqChain, filename);
+      candChain = resolveCandidateChain(loaded.structure.chains, reqChain, filename);
     } catch (chainErr: any) {
       return res.status(400).json({ error: chainErr.message });
     }
-    const resList = structure.residuesByChain[candChain] || [];
-    const allCandResidues = Object.values(structure.residuesByChain).flat();
+    const resList = loaded.structure.residuesByChain[candChain] || [];
+    const allCandResidues = Object.values(loaded.structure.residuesByChain).flat();
     if (resList.length > 0) {
       calculateSASA(resList, 1.4, 96, allCandResidues);
     }
@@ -458,26 +302,26 @@ app.post('/api/v1/candidates', async (req, res) => {
     const candidateId = 'cand_' + crypto.randomUUID();
     candidatesStore.set(candidateId, {
       id: candidateId,
-      sourceType,
-      identifier: filename || (parsedSeq ? `Seq-${parsedSeq.length}aa` : 'Candidate-PDB'),
-      sequence: parsedSeq,
-      structure,
-      isExperimental,
-      candidateSource,
-      isSimulated,
+      sourceType: loaded.sourceType,
+      identifier: loaded.identifier,
+      sequence: loaded.sequence,
+      structure: loaded.structure,
+      isExperimental: loaded.isExperimental,
+      candidateSource: loaded.candidateSource,
+      isSimulated: loaded.isSimulated,
       chain: candChain,
       createdAtMs: Date.now(),
     });
 
     res.json({
       candidate_id: candidateId,
-      source_type: sourceType,
-      is_experimental: isExperimental,
-      candidate_source: candidateSource,
-      is_simulated: isSimulated,
+      source_type: loaded.sourceType,
+      is_experimental: loaded.isExperimental,
+      candidate_source: loaded.candidateSource,
+      is_simulated: loaded.isSimulated,
       chain: candChain,
       residues_count: resList.length,
-      sample_pdb: structure.rawPdb,
+      sample_pdb: loaded.structure.rawPdb,
     });
   } catch (err: any) {
     handleApiError(res, err, '후보 물질 처리 중 오류가 발생했습니다.', 500);
@@ -685,276 +529,58 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
       return res.status(400).json({ error: '후보 물질(Candidate) 입력값이 필요합니다. (아미노산 서열 또는 PDB ID)' });
     }
 
-    // --- 1. Resolve Target Structure ---
-    let cleanTarget = target_input.trim();
-    if (cleanTarget.startsWith('>')) {
-      const records = parseFastaInput(cleanTarget);
-      if (records.length > 1) {
-        return res.status(400).json({
-          error: '타겟 FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
-        });
-      }
-      cleanTarget = records[0]?.sequence || '';
-    }
+    const loadedTarget = await loadTargetFromInputString(target_input);
+    const loadedCandidate = await loadCandidateFromInputString(candidate_input);
 
-    let targetPdbText = '';
-    let targetSourceType: 'pdb' | 'uniprot' | 'file' = 'pdb';
-    let targetIdentifier = '';
+    const pipelineResult = await runEvaluationPipeline({
+      targetStructure: loadedTarget.structure,
+      candidateStructure: loadedCandidate.structure,
+      targetChainReq: reqTargetChain,
+      candidateChainReq: reqCandidateChain,
+      epitopeRangeReq: epitope_range,
+      multiEpitopesReq: req.body.multi_epitopes,
+      weightsReq: weights,
+      isExperimentalCandidate: loadedCandidate.isExperimental,
+      candidateSource: loadedCandidate.candidateSource,
+      isSimulatedCandidate: loadedCandidate.isSimulated,
+    });
 
-    if (cleanTarget.startsWith('ATOM') || cleanTarget.startsWith('HEADER') || cleanTarget.includes('_atom_site.')) {
-      targetPdbText = cleanTarget;
-      targetSourceType = 'file';
-      targetIdentifier = 'Custom_Target_PDB';
-    } else if (isValidPdbId(cleanTarget)) {
-      // PDB ID
-      targetIdentifier = cleanTarget.toUpperCase();
-      targetSourceType = 'pdb';
-      try {
-        const pdbRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.pdb`);
-        if (pdbRes.ok) {
-          const txt = await pdbRes.text();
-          if (!txt.trim().startsWith('<')) targetPdbText = txt;
-        }
-        if (!targetPdbText) {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${targetIdentifier}.cif`);
-          if (cifRes.ok) {
-            const txt = await cifRes.text();
-            if (!txt.trim().startsWith('<')) targetPdbText = txt;
-          }
-        }
-        if (!targetPdbText) throw new Error(`PDB ${targetIdentifier}를 찾을 수 없거나 유효하지 않은 응답을 받았습니다.`);
-      } catch (err: any) {
-        return res.status(400).json({ error: `RCSB PDB에서 ${targetIdentifier}를 가져올 수 없습니다: ${err.message || err}` });
-      }
-    } else if (isValidUniprotId(cleanTarget)) {
-      // UniProt ID
-      targetIdentifier = cleanTarget.toUpperCase();
-      targetSourceType = 'uniprot';
-      try {
-        const afRes = await fetchWithTimeout(`https://alphafold.ebi.ac.uk/api/prediction/${targetIdentifier}`);
-        if (!afRes.ok) return res.status(400).json({ error: `AlphaFold DB에서 UniProt ${targetIdentifier}를 찾을 수 없습니다.` });
-        const meta = await afRes.json();
-        const entry = Array.isArray(meta) ? meta[0] : meta;
-        const pdbUrl = entry?.pdbUrl || entry?.cifUrl;
-        if (!pdbUrl) return res.status(400).json({ error: 'AlphaFold 3D 구조 URL을 찾을 수 없습니다.' });
-        const structRes = await fetchWithTimeout(pdbUrl);
-        if (!structRes.ok) return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드에 실패했습니다.' });
-        const txt = await structRes.text();
-        if (txt.trim().startsWith('<')) return res.status(400).json({ error: 'AlphaFold 구조 파일이 HTML 오류 페이지입니다.' });
-        targetPdbText = txt;
-      } catch (afErr: any) {
-        return res.status(400).json({ error: `AlphaFold DB 조회 실패 (${targetIdentifier}): ${afErr.message || afErr}` });
-      }
-    } else {
-      return res.status(400).json({ error: '유효하지 않은 타겟 입력입니다. 타겟은 PDB/mmCIF 구조 파일, PDB ID 또는 UniProt ID만 지원됩니다.' });
-    }
-
-    const targetStructure = targetPdbText.includes('_atom_site.')
-      ? parseMmcif(targetPdbText)
-      : parsePdb(targetPdbText);
-
-    if (targetStructure.chains.length === 0 || targetStructure.allAtoms.length === 0) {
-      return res.status(400).json({ error: '유효한 타겟 단백질 원자(ATOM) 좌표를 파싱하지 못했습니다.' });
-    }
-
-    const targetAtomCheck = checkAtomCountLimit(targetStructure.allAtoms.length);
-    if (!targetAtomCheck.isWithinLimit) {
-      return res.status(400).json({ error: targetAtomCheck.error });
-    }
-
-    // Calculate SASA on target (in full assembly context across all chains)
-    const allTargetAssemblyResidues = Object.values(targetStructure.residuesByChain).flat();
-    for (const chain of targetStructure.chains) {
-      const resList = targetStructure.residuesByChain[chain] || [];
-      if (resList.length > 0) calculateSASA(resList, 1.4, 96, allTargetAssemblyResidues);
-    }
-
-    let targetChain = '';
-    try {
-      targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
-    } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
-    }
-
-    const targetResidues = targetStructure.residuesByChain[targetChain] || [];
-    if (targetResidues.length === 0) {
-      return res.status(400).json({ error: `타겟 체인 ${targetChain}에 분석 가능한 잔기가 없습니다.` });
-    }
-
-    // Save target
     const targetId = 'tgt_' + crypto.randomUUID();
     targetsStore.set(targetId, {
       id: targetId,
-      sourceType: targetSourceType,
-      identifier: targetIdentifier,
-      structure: targetStructure,
-      chains: targetStructure.chains,
-      chainResidueCounts: { [targetChain]: targetResidues.length },
+      sourceType: loadedTarget.sourceType,
+      identifier: loadedTarget.identifier,
+      structure: loadedTarget.structure,
+      chains: loadedTarget.structure.chains,
+      chainResidueCounts: { [pipelineResult.targetChain]: (loadedTarget.structure.residuesByChain[pipelineResult.targetChain] || []).length },
       createdAtMs: Date.now(),
     });
-
-    // --- 2. Resolve Epitope ---
-    let epitopeResult;
-    if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim().length > 0) {
-      epitopeResult = await resolveEpitopeInput({
-        targetStructure,
-        targetChain,
-        method: 'manual',
-        manualRange: epitope_range,
-        allowTemporaryFallback: false,
-      });
-    } else {
-      epitopeResult = await resolveEpitopeInput({
-        targetStructure,
-        targetChain,
-        method: 'temporary_rsa',
-      });
-    }
-
-    const epitopeResidueSeqs = epitopeResult.residues;
-    const epitopeMethod = epitopeResult.method;
 
     const epitopeId = 'epi_' + crypto.randomUUID();
     epitopesStore.set(epitopeId, {
       id: epitopeId,
       targetId,
-      method: epitopeMethod,
-      residues: epitopeResidueSeqs,
-      isTemporary: epitopeResult.isTemporary,
+      method: pipelineResult.epitopeMethod as any,
+      residues: pipelineResult.epitopeResidues,
+      isTemporary: pipelineResult.isTemporaryEpitope,
       createdAtMs: Date.now(),
     });
-
-    // --- 3. Resolve Candidate Structure ---
-    let cleanCandidate = candidate_input.trim();
-    if (cleanCandidate.startsWith('>')) {
-      const records = parseFastaInput(cleanCandidate);
-      if (records.length > 1) {
-        return res.status(400).json({
-          error: '후보 FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.',
-        });
-      }
-      cleanCandidate = records[0]?.sequence || '';
-    }
-
-    let candStructure: ParsedStructure;
-    let isCandExperimental = false;
-    let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = 'experimental';
-    let isSimulated = false;
-    let candChain = reqCandidateChain?.trim() || 'A';
-
-    if (cleanCandidate.startsWith('ATOM') || cleanCandidate.startsWith('HEADER') || cleanCandidate.includes('_atom_site.')) {
-      candStructure = cleanCandidate.includes('_atom_site.') ? parseMmcif(cleanCandidate) : parsePdb(cleanCandidate);
-      isCandExperimental = true;
-      candidateSource = 'experimental';
-      isSimulated = false;
-    } else if (isValidPdbId(cleanCandidate)) {
-      const candId = cleanCandidate.toUpperCase();
-      try {
-        const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
-        if (!r.ok) {
-          throw new Error(`PDB ${candId} 다운로드 실패 (${r.status})`);
-        }
-        const txt = await r.text();
-        if (txt.trim().startsWith('<')) {
-          throw new Error(`PDB ${candId} 응답이 HTML 오류 페이지입니다.`);
-        }
-        candStructure = parsePdb(txt);
-        isCandExperimental = true;
-        candidateSource = 'experimental';
-        isSimulated = false;
-      } catch (err: any) {
-        return res.status(400).json({
-          error: `후보 PDB '${candId}'를 불러오지 못했습니다: ${err.message || err}`,
-        });
-      }
-    } else {
-      // Candidate is amino acid sequence: call ESMFold
-      const seqVal = validateAminoAcidSequence(cleanCandidate, { minLen: 5, maxLen: 600 });
-      if (!seqVal.isValid) {
-        return res.status(400).json({ error: `후보 서열 오류: ${seqVal.error}` });
-      }
-      const esmResult = await predictStructureWithESMFold(cleanCandidate);
-      if (esmResult.success && esmResult.parsedStructure) {
-        candStructure = esmResult.parsedStructure;
-        isCandExperimental = false;
-        candidateSource = 'esmfold';
-        isSimulated = false;
-      } else {
-        // Fallback: thread sequence on target template if compatible
-        try {
-          const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-          candStructure = parsePdb(threadedPdb);
-          isCandExperimental = false;
-          candidateSource = 'simulated';
-          isSimulated = true;
-        } catch (threadErr: any) {
-          return res.status(400).json({
-            error: `ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}). 유효한 3D PDB 파일이나 PDB ID를 업로드해 주세요.`,
-          });
-        }
-      }
-    }
-
-    try {
-      candChain = resolveCandidateChain(candStructure.chains, reqCandidateChain);
-    } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
-    }
-
-    const candAtomCheck = checkAtomCountLimit(candStructure.allAtoms.length);
-    if (!candAtomCheck.isWithinLimit) {
-      return res.status(400).json({ error: candAtomCheck.error });
-    }
-
-    const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
-    if (candResidues.length === 0) {
-      return res.status(400).json({ error: '후보 물질 구조에서 잔기 좌표를 생성하지 못했습니다.' });
-    }
-    const allCandAssemblyResidues = Object.values(candStructure.residuesByChain).flat();
-    calculateSASA(candResidues, 1.4, 96, allCandAssemblyResidues);
 
     const candidateId = 'cand_' + crypto.randomUUID();
     candidatesStore.set(candidateId, {
       id: candidateId,
-      identifier: isCandExperimental ? 'Custom_Candidate_PDB' : 'Candidate_Sequence',
-      sourceType: isCandExperimental ? 'pdb' : 'sequence',
-      sequence: cleanCandidate.replace(/[^A-Za-z]/g, '').toUpperCase(),
-      structure: candStructure,
-      isExperimental: isCandExperimental,
-      candidateSource,
-      isSimulated,
-      chain: candChain,
+      identifier: loadedCandidate.identifier,
+      sourceType: loadedCandidate.sourceType,
+      sequence: loadedCandidate.sequence,
+      structure: loadedCandidate.structure,
+      isExperimental: loadedCandidate.isExperimental,
+      candidateSource: loadedCandidate.candidateSource,
+      isSimulated: loadedCandidate.isSimulated,
+      chain: pipelineResult.candidateChain,
       createdAtMs: Date.now(),
     });
 
-    // --- 4. Alignment & Antigenic Mimicry Evaluation ---
-    const weightValidation = validateAndNormalizeWeights(weights);
-    if (!weightValidation.isValid) {
-      return res.status(400).json({ error: weightValidation.error });
-    }
-    const customWeights = weightValidation.normalizedWeights;
-
-    const multiEpitopesList: MultiEpitopeEntity[] | undefined = Array.isArray(req.body.multi_epitopes)
-      ? req.body.multi_epitopes
-      : undefined;
-
-    const alignment = alignStructures(targetResidues, candResidues);
-    const evaluation = evaluateAntigenicMimicry(
-      alignment,
-      epitopeResidueSeqs,
-      isCandExperimental,
-      customWeights,
-      epitopeMethod,
-      targetChain,
-      multiEpitopesList
-    );
-
-    const alignedPdb = generateSuperimposedPdb(
-      candStructure,
-      candChain,
-      alignment.rotationMatrix,
-      alignment.translationVector
-    );
+    const { evaluation, alignedPdb, targetChain, candidateChain, epitopeResidues, normWeights, isTemporaryEpitope, epitopeMethod } = pipelineResult;
 
     const jobId = 'job_' + crypto.randomUUID();
     const jobRecord: StoredJob = {
@@ -980,10 +606,10 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
           mode: evaluation.autoSettings.mode,
           epitope_source: evaluation.autoSettings.epitopeSource,
           target_chain: targetChain,
-          is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
-          is_experimental_candidate: isCandExperimental,
-          candidate_source: candidateSource,
-          is_simulated: isSimulated,
+          is_temporary_epitope: isTemporaryEpitope,
+          is_experimental_candidate: loadedCandidate.isExperimental,
+          candidate_source: loadedCandidate.candidateSource,
+          is_simulated: loadedCandidate.isSimulated,
         },
         alignment: {
           tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
@@ -1006,7 +632,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
         reproducibility: evaluation.reproducibility || {},
         aligned_pdb_download_url: `/api/v1/downloads/${jobId}/aligned.pdb`,
         aligned_candidate_pdb: alignedPdb,
-        target_pdb: targetStructure.rawPdb,
+        target_pdb: loadedTarget.structure.rawPdb,
       },
     };
 
@@ -1023,7 +649,6 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       target_input,
       target_chain: reqTargetChain,
       epitope_range,
-      multi_epitopes,
       candidates,
       weights,
     } = req.body;
@@ -1041,146 +666,28 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       return res.status(400).json({ error: batchCandCheck.error });
     }
 
-    // 1. Resolve Target
-    let cleanTarget = target_input.trim();
-    let targetStructure: ParsedStructure;
-    let targetSourceType: 'pdb' | 'uniprot' | 'file' = 'pdb';
-    let targetIdentifier = '';
-
-    if (cleanTarget.startsWith('ATOM') || cleanTarget.startsWith('HEADER') || cleanTarget.includes('_atom_site.')) {
-      targetStructure = cleanTarget.includes('_atom_site.') ? parseMmcif(cleanTarget) : parsePdb(cleanTarget);
-      targetSourceType = 'file';
-      targetIdentifier = 'Batch_Target_File';
-    } else if (isValidPdbId(cleanTarget)) {
-      const pdbId = cleanTarget.toUpperCase();
-      targetIdentifier = pdbId;
-      targetSourceType = 'pdb';
-      try {
-        const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.pdb`);
-        let txt = '';
-        if (r.ok) {
-          const temp = await r.text();
-          if (!temp.trim().startsWith('<')) txt = temp;
-        }
-        if (!txt) {
-          const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${pdbId}.cif`);
-          if (cifRes.ok) {
-            const temp = await cifRes.text();
-            if (!temp.trim().startsWith('<')) txt = temp;
-          }
-        }
-        if (!txt) {
-          return res.status(400).json({ error: `RCSB PDB에서 타겟 구조 '${pdbId}'를 찾을 수 없거나 HTML 오류 응답을 받았습니다.` });
-        }
-        targetStructure = txt.includes('_atom_site.') ? parseMmcif(txt) : parsePdb(txt);
-      } catch (err: any) {
-        return res.status(400).json({ error: `RCSB PDB 타겟 조회 실패 (${pdbId}): ${err.message || err}` });
-      }
-    } else if (isValidUniprotId(cleanTarget)) {
-      const uniprotId = cleanTarget.toUpperCase();
-      targetIdentifier = uniprotId;
-      targetSourceType = 'uniprot';
-      try {
-        const afRes = await fetchWithTimeout(`https://alphafold.ebi.ac.uk/api/prediction/${uniprotId}`);
-        if (!afRes.ok) {
-          return res.status(400).json({ error: `AlphaFold DB에서 해당 UniProt ID (${uniprotId})를 찾을 수 없습니다.` });
-        }
-        const metaData = await afRes.json();
-        const entry = Array.isArray(metaData) ? metaData[0] : metaData;
-        const fileUrl = entry?.cifUrl || entry?.pdbUrl;
-        if (!fileUrl) {
-          return res.status(400).json({ error: 'AlphaFold DB 결과에 구조 파일 URL이 포함되어 있지 않습니다.' });
-        }
-
-        const fileRes = await fetchWithTimeout(fileUrl);
-        if (!fileRes.ok) {
-          return res.status(400).json({ error: 'AlphaFold 구조 파일 다운로드 실패' });
-        }
-        const txt = await fileRes.text();
-        if (txt.trim().startsWith('<')) {
-          return res.status(400).json({ error: 'AlphaFold 구조 파일 응답이 HTML 오류 페이지입니다.' });
-        }
-        targetStructure = txt.includes('_atom_site.') ? parseMmcif(txt) : parsePdb(txt);
-      } catch (err: any) {
-        return res.status(400).json({ error: `AlphaFold DB 타겟 조회 실패 (${uniprotId}): ${err.message || err}` });
-      }
-    } else {
-      return res.status(400).json({ error: '유효하지 않은 타겟 입력입니다. 타겟은 PDB/mmCIF 구조 파일, PDB ID 또는 UniProt ID만 지원됩니다.' });
-    }
-
-    const targetAtomCheck = checkAtomCountLimit(targetStructure.allAtoms.length);
-    if (!targetAtomCheck.isWithinLimit) {
-      return res.status(400).json({ error: targetAtomCheck.error });
-    }
-
-    let targetChain = '';
-    try {
-      targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
-    } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
-    }
-    const targetResidues = targetStructure.residuesByChain[targetChain] || Object.values(targetStructure.residuesByChain)[0] || [];
-    const allTargetBatchResidues = Object.values(targetStructure.residuesByChain).flat();
-    calculateSASA(targetResidues, 1.4, 96, allTargetBatchResidues);
+    const loadedTarget = await loadTargetFromInputString(target_input);
 
     const chainResidueCounts: Record<string, number> = {};
-    for (const c of targetStructure.chains) {
-      chainResidueCounts[c] = (targetStructure.residuesByChain[c] || []).length;
+    for (const c of loadedTarget.structure.chains) {
+      chainResidueCounts[c] = (loadedTarget.structure.residuesByChain[c] || []).length;
     }
 
     const targetId = 'tgt_' + crypto.randomUUID();
     targetsStore.set(targetId, {
       id: targetId,
-      identifier: 'Batch_Target',
-      sourceType: 'pdb',
-      structure: targetStructure,
-      chains: targetStructure.chains,
+      identifier: loadedTarget.identifier,
+      sourceType: loadedTarget.sourceType,
+      structure: loadedTarget.structure,
+      chains: loadedTarget.structure.chains,
       chainResidueCounts,
       createdAtMs: Date.now(),
     });
 
-    // 2. Resolve Epitope residues
-    const multiEpitopesList: MultiEpitopeEntity[] | undefined = Array.isArray(multi_epitopes) && multi_epitopes.length > 0
-      ? multi_epitopes
-      : undefined;
-
-    let epitopeResidueSeqs: (number | string)[] = [];
-    let epitopeMethod: 'manual' | 'temporary_rsa_fallback' = 'manual';
-
-    if (multiEpitopesList && multiEpitopesList.length > 0) {
-      multiEpitopesList.forEach(ep => {
-        const resList = ep.residues && ep.residues.length > 0 ? ep.residues : parseResidueRange(ep.range);
-        epitopeResidueSeqs.push(...resList);
-      });
-      epitopeResidueSeqs = Array.from(new Set(epitopeResidueSeqs)).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-    } else if (epitope_range && typeof epitope_range === 'string' && epitope_range.trim().length > 0) {
-      const epRes = await resolveEpitopeInput({
-        targetStructure,
-        targetChain,
-        method: 'manual',
-        manualRange: epitope_range,
-        allowTemporaryFallback: false,
-      });
-      epitopeResidueSeqs = epRes.residues;
-      epitopeMethod = epRes.method as any;
-    } else {
-      const epRes = await resolveEpitopeInput({
-        targetStructure,
-        targetChain,
-        method: 'temporary_rsa',
-      });
-      epitopeResidueSeqs = epRes.residues;
-      epitopeMethod = 'temporary_rsa_fallback';
-    }
-
-    const weightValidation = validateAndNormalizeWeights(weights);
-    if (!weightValidation.isValid) {
-      return res.status(400).json({ error: weightValidation.error });
-    }
-    const customWeights = weightValidation.normalizedWeights;
-
-    // 3. Evaluate each Candidate Entity
     const results = [];
+    let commonTargetChain = '';
+    let commonEpitopeResCount = 0;
+    let commonIsTempEpitope = false;
 
     for (let i = 0; i < candidates.length; i++) {
       const cand = candidates[i];
@@ -1188,113 +695,33 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
       const candName = cand.name || `Candidate ${i + 1}`;
 
       try {
-        let cleanCand = (cand.input || '').trim();
-        if (cleanCand.startsWith('>')) {
-          const records = parseFastaInput(cleanCand);
-          if (records.length > 1) {
-            throw new Error(`후보 '${candName}' FASTA 입력에 여러 서열 레코드가 포함되어 있습니다. 단일 서열만 입력해 주세요.`);
-          }
-          cleanCand = records[0]?.sequence || '';
-        }
+        const loadedCand = await loadCandidateFromInputString(cand.input || '', i);
+        const pipelineResult = await runEvaluationPipeline({
+          targetStructure: loadedTarget.structure,
+          candidateStructure: loadedCand.structure,
+          targetChainReq: reqTargetChain,
+          candidateChainReq: cand.chain,
+          epitopeRangeReq: epitope_range,
+          multiEpitopesReq: req.body.multi_epitopes,
+          weightsReq: weights,
+          isExperimentalCandidate: loadedCand.isExperimental,
+          candidateSource: loadedCand.candidateSource,
+          isSimulatedCandidate: loadedCand.isSimulated,
+          filenameHint: candName,
+        });
 
-        let candStructure: ParsedStructure;
-        let isCandExperimental = false;
-        let candidateSource: 'experimental' | 'alphafold' | 'esmfold' | 'simulated' = 'experimental';
-        let isSimulated = false;
-        let candChain = cand.chain?.trim() || 'A';
-
-        if (cleanCand.startsWith('ATOM') || cleanCand.startsWith('HEADER') || cleanCand.includes('_atom_site.')) {
-          candStructure = cleanCand.includes('_atom_site.') ? parseMmcif(cleanCand) : parsePdb(cleanCand);
-          isCandExperimental = true;
-          candidateSource = 'experimental';
-          isSimulated = false;
-        } else if (isValidPdbId(cleanCand)) {
-          const pId = cleanCand.toUpperCase();
-          try {
-            const r = await fetchWithTimeout(`https://files.rcsb.org/download/${pId}.pdb`);
-            if (!r.ok) {
-              throw new Error(`PDB ${pId} 다운로드 실패 (${r.status})`);
-            }
-            const txt = await r.text();
-            if (txt.trim().startsWith('<')) {
-              throw new Error(`PDB ${pId} 응답이 HTML 오류 페이지입니다.`);
-            }
-            candStructure = parsePdb(txt);
-            isCandExperimental = true;
-            candidateSource = 'experimental';
-            isSimulated = false;
-          } catch (err: any) {
-            throw new Error(`후보 '${candName}' PDB '${pId}'를 불러오지 못했습니다: ${err.message || err}`);
-          }
-        } else {
-          // Candidate is amino acid sequence: call ESMFold
-          const seqVal = validateAminoAcidSequence(cleanCand, { minLen: 5, maxLen: 600 });
-          if (!seqVal.isValid) {
-            throw new Error(`후보 '${candName}' 서열 오류: ${seqVal.error}`);
-          }
-          const esmResult = await predictStructureWithESMFold(cleanCand);
-          if (esmResult.success && esmResult.parsedStructure) {
-            candStructure = esmResult.parsedStructure;
-            isCandExperimental = false;
-            candidateSource = 'esmfold';
-            isSimulated = false;
-          } else {
-            // Fallback: thread sequence on target template
-            try {
-              const threadedPdb = threadSequenceOnTemplate(seqVal.sequence, targetResidues, 'A');
-              candStructure = parsePdb(threadedPdb);
-              isCandExperimental = false;
-              candidateSource = 'simulated';
-              isSimulated = true;
-            } catch (threadErr: any) {
-              throw new Error(`후보 '${candName}' ESMFold 예측 연동 실패 (${esmResult.error || '응답 없음'}) 및 템플릿 모사 실패 (${threadErr.message}).`);
-            }
-          }
-        }
-
-        const candAtomCheck = checkAtomCountLimit(candStructure.allAtoms.length);
-        if (!candAtomCheck.isWithinLimit) {
-          throw new Error(candAtomCheck.error);
-        }
-
-        try {
-          candChain = resolveCandidateChain(candStructure.chains, cand.chain, candName);
-        } catch (chainErr: any) {
-          throw new Error(chainErr.message);
-        }
-
-        const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
-        if (candResidues.length === 0) {
-          throw new Error(`후보 '${candName}'에서 잔기 구조를 생성할 수 없습니다.`);
-        }
-        const allCandBatchResidues = Object.values(candStructure.residuesByChain).flat();
-        calculateSASA(candResidues, 1.4, 96, allCandBatchResidues);
-
-        const alignment = alignStructures(targetResidues, candResidues);
-        const evaluation = evaluateAntigenicMimicry(
-          alignment,
-          epitopeResidueSeqs,
-          isCandExperimental,
-          customWeights,
-          epitopeMethod,
-          targetChain,
-          multiEpitopesList
-        );
-
-        const alignedPdb = generateSuperimposedPdb(
-          candStructure,
-          candChain,
-          alignment.rotationMatrix,
-          alignment.translationVector
-        );
+        commonTargetChain = pipelineResult.targetChain;
+        commonEpitopeResCount = pipelineResult.epitopeResidues.length;
+        commonIsTempEpitope = pipelineResult.isTemporaryEpitope;
 
         const jobId = 'job_' + crypto.randomUUID();
+        const { evaluation, alignedPdb } = pipelineResult;
         const jobRecord: StoredJob = {
           id: jobId,
           targetId,
           candidateId: candId,
           epitopeId: 'epi_batch',
-          targetChain,
+          targetChain: pipelineResult.targetChain,
           status: 'done',
           createdAt: new Date().toISOString(),
           createdAtMs: Date.now(),
@@ -1313,11 +740,11 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             auto_settings: {
               mode: evaluation.autoSettings.mode,
               epitope_source: evaluation.autoSettings.epitopeSource,
-              target_chain: targetChain,
-              is_temporary_epitope: epitopeMethod === 'temporary_rsa_fallback',
-              is_experimental_candidate: isCandExperimental,
-                candidate_source: candidateSource,
-                is_simulated: isSimulated,
+              target_chain: pipelineResult.targetChain,
+              is_temporary_epitope: pipelineResult.isTemporaryEpitope,
+              is_experimental_candidate: loadedCand.isExperimental,
+              candidate_source: loadedCand.candidateSource,
+              is_simulated: loadedCand.isSimulated,
             },
             alignment: {
               tm_score_target_norm: evaluation.alignment.tmScoreTargetNorm,
@@ -1340,7 +767,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
             reproducibility: evaluation.reproducibility || {},
             aligned_pdb_download_url: `/api/v1/downloads/${jobId}/aligned.pdb`,
             aligned_candidate_pdb: alignedPdb,
-            target_pdb: targetStructure.rawPdb,
+            target_pdb: loadedTarget.structure.rawPdb,
           },
         });
       } catch (candErr: any) {
@@ -1361,10 +788,10 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
     });
 
     res.json({
-      target_pdb: targetStructure.rawPdb,
-      chains: targetStructure.chains,
+      target_pdb: loadedTarget.structure.rawPdb,
+      chains: loadedTarget.structure.chains,
       chain_residue_counts: chainResidueCounts,
-      epitopes: multiEpitopesList || [],
+      epitopes: req.body.multi_epitopes || [],
       results,
     });
   } catch (err: any) {
