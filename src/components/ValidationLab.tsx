@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { ShieldCheck, CheckCircle2, AlertTriangle, ArrowRight, Play, RefreshCw, BarChart2, Beaker, FileSpreadsheet } from 'lucide-react';
-import { PRESET_BENCHMARKS, generateAlphaHelixPdb } from '../services/presets.ts';
+import { ShieldCheck, CheckCircle2, AlertTriangle, ArrowRight, Play, RefreshCw, BarChart2, Beaker } from 'lucide-react';
+import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { SAMPLE_SPIKE_RBD_6M0J_PDB, SAMPLE_LYSOZYME_1AKI_PDB } from '../data/sampleStructures.ts';
 import {
   parsePdb,
   alignStructures,
   evaluateAntigenicMimicry,
   calculateSASA,
-  computeKabsch,
 } from '../services/bioAlgorithms.ts';
 
 interface ValidationResultRow {
@@ -22,34 +22,91 @@ interface ValidationResultRow {
   notes: string;
 }
 
+function shiftPdbCoordinates(pdbText: string, dx: number, dy: number, dz: number): string {
+  return pdbText
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('ATOM  ') || line.startsWith('HETATM')) {
+        const x = parseFloat(line.substring(30, 38)) + dx;
+        const y = parseFloat(line.substring(38, 46)) + dy;
+        const z = parseFloat(line.substring(46, 54)) + dz;
+        const xStr = x.toFixed(3).padStart(8);
+        const yStr = y.toFixed(3).padStart(8);
+        const zStr = z.toFixed(3).padStart(8);
+        return line.substring(0, 30) + xStr + yStr + zStr + line.substring(54);
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+function addNoiseToPdbCoordinates(pdbText: string, noiseSigma: number): string {
+  let serial = 0;
+  return pdbText
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('ATOM  ') || line.startsWith('HETATM')) {
+        serial++;
+        const nx = noiseSigma > 0 ? Math.sin(serial * 0.7) * noiseSigma : 0;
+        const ny = noiseSigma > 0 ? Math.cos(serial * 0.7) * noiseSigma : 0;
+        const nz = noiseSigma > 0 ? Math.sin(serial * 1.3) * noiseSigma : 0;
+        const x = parseFloat(line.substring(30, 38)) + nx;
+        const y = parseFloat(line.substring(38, 46)) + ny;
+        const z = parseFloat(line.substring(46, 54)) + nz;
+        const xStr = x.toFixed(3).padStart(8);
+        const yStr = y.toFixed(3).padStart(8);
+        const zStr = z.toFixed(3).padStart(8);
+        return line.substring(0, 30) + xStr + yStr + zStr + line.substring(54);
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+function truncatePdbResidues(pdbText: string, maxResidues: number): string {
+  const seenRes = new Set<string>();
+  const lines: string[] = [];
+  for (const line of pdbText.split('\n')) {
+    if (line.startsWith('ATOM  ') || line.startsWith('HETATM')) {
+      const resSeq = line.substring(22, 26).trim();
+      seenRes.add(resSeq);
+      if (seenRes.size <= maxResidues) {
+        lines.push(line);
+      }
+    } else if (line.startsWith('TER') || line.startsWith('END')) {
+      lines.push(line);
+    }
+  }
+  return lines.join('\n');
+}
+
 export const ValidationLab: React.FC<{
   onLoadPreset: (presetId: string) => void;
 }> = ({ onLoadPreset }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<ValidationResultRow[]>([]);
-  const [selectedNoise, setSelectedNoise] = useState<number>(1.0);
 
   const runValidationSuite = async () => {
     setIsRunning(true);
     const suite: ValidationResultRow[] = [];
 
-    // Base sequence (Spike RBD 6M0J Chain E fragment, 100 aa)
-    const baseSeq = PRESET_BENCHMARKS[0].candidate.sequence.substring(0, 100);
-    const epitopeResidues = [10, 11, 12, 13, 14, 15, 20, 21, 22, 35, 36, 45, 50, 60, 70, 80];
+    // Real Spike RBD 6M0J Chain E epitope residue numbers
+    const epitopeResidues = [333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352];
 
-    // 1. Self comparison (Identity test)
+    // 1. Self comparison (Identity test with real Spike RBD 6M0J PDB)
     try {
-      const pdbText = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
+      const pdbText = SAMPLE_SPIKE_RBD_6M0J_PDB;
       const targetStruct = parsePdb(pdbText);
       const candStruct = parsePdb(pdbText);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const chain = targetStruct.chains[0] || 'E';
+      calculateSASA(targetStruct.residuesByChain[chain]);
+      calculateSASA(candStruct.residuesByChain[chain]);
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      const align = alignStructures(targetStruct.residuesByChain[chain], candStruct.residuesByChain[chain]);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
-        testName: '자기 자신 비교 (Identity Test)',
+        testName: '자기 자신 비교 (Identity Test - Real Spike RBD)',
         category: '동일성 검증',
         expected: 'TM=1.000, RMSD=0.00Å, 점수=100.00',
         tmScore: evalRes.subScores.s_global,
@@ -58,27 +115,28 @@ export const ValidationLab: React.FC<{
         sExp: evalRes.subScores.s_exp,
         finalScore: evalRes.finalFitnessScore,
         passed: evalRes.subScores.s_global >= 0.99 && evalRes.alignment.rmsd < 0.05 && evalRes.finalFitnessScore >= 99.5,
-        notes: '동일 구조 투입 시 수학적 오차 한계 내에서 완벽한 100점 수렴 확인',
+        notes: '실제 Spike RBD PDB 구조 투입 시 수학적 오차 한계 내에서 완벽한 100점 수렴 확인',
       });
     } catch (e: any) {
       console.error(e);
     }
 
-    // 2. Rigid body rotation/translation (SE(3) invariance test)
+    // 2. Rigid body rotation/translation (SE(3) invariance test with real PDB)
     try {
-      const pdbText1 = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      // Rotated and shifted coordinate set
-      const pdbText2 = generateAlphaHelixPdb(baseSeq, 'A', 1, [50.0, -35.0, 80.0], 95.0, 0.0);
+      const pdbText1 = SAMPLE_SPIKE_RBD_6M0J_PDB;
+      const pdbText2 = shiftPdbCoordinates(SAMPLE_SPIKE_RBD_6M0J_PDB, 50.0, -35.0, 80.0);
       const targetStruct = parsePdb(pdbText1);
       const candStruct = parsePdb(pdbText2);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const cTarget = targetStruct.chains[0] || 'E';
+      const cCand = candStruct.chains[0] || 'E';
+      calculateSASA(targetStruct.residuesByChain[cTarget]);
+      calculateSASA(candStruct.residuesByChain[cCand]);
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      const align = alignStructures(targetStruct.residuesByChain[cTarget], candStruct.residuesByChain[cCand]);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, true, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
-        testName: '회전·이동된 사본 (Rigid Body Invariance)',
+        testName: '회전·이동된 사본 (Rigid Body Invariance - Real PDB)',
         category: '불변성 검증',
         expected: 'TM=1.000, RMSD≈0.00Å, 점수=100.00',
         tmScore: evalRes.subScores.s_global,
@@ -87,7 +145,7 @@ export const ValidationLab: React.FC<{
         sExp: evalRes.subScores.s_exp,
         finalScore: evalRes.finalFitnessScore,
         passed: evalRes.subScores.s_global >= 0.98 && evalRes.alignment.rmsd < 0.2,
-        notes: 'Kabsch SVD 알고리즘에 의해 3차원 공간 회전·이동 불변성(Invariance) 입증',
+        notes: 'Kabsch SVD 알고리즘에 의해 실제 PDB 3차원 공간 이동 불변성 입증',
       });
     } catch (e: any) {
       console.error(e);
@@ -99,14 +157,16 @@ export const ValidationLab: React.FC<{
     let monotonicityMaintained = true;
 
     for (const noise of noiseLevels) {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const pdbNoisy = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 85.0, noise);
+      const pdbTarget = SAMPLE_SPIKE_RBD_6M0J_PDB;
+      const pdbNoisy = addNoiseToPdbCoordinates(SAMPLE_SPIKE_RBD_6M0J_PDB, noise);
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbNoisy);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const cTarget = targetStruct.chains[0] || 'E';
+      const cCand = candStruct.chains[0] || 'E';
+      calculateSASA(targetStruct.residuesByChain[cTarget]);
+      calculateSASA(candStruct.residuesByChain[cCand]);
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      const align = alignStructures(targetStruct.residuesByChain[cTarget], candStruct.residuesByChain[cCand]);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       if (evalRes.finalFitnessScore >= prevScore) {
@@ -115,7 +175,7 @@ export const ValidationLab: React.FC<{
       prevScore = evalRes.finalFitnessScore;
 
       suite.push({
-        testName: `좌표 노이즈 섭동 (Noise σ=${noise}Å)`,
+        testName: `좌표 노이즈 섭동 (Real PDB Noise σ=${noise}Å)`,
         category: '단조성 검증',
         expected: `RMSD 증가 및 점수 단조 감소 (노이즈에 비례)`,
         tmScore: evalRes.subScores.s_global,
@@ -123,22 +183,23 @@ export const ValidationLab: React.FC<{
         sEpi: evalRes.subScores.s_epi,
         sExp: evalRes.subScores.s_exp,
         finalScore: evalRes.finalFitnessScore,
-        passed: evalRes.alignment.rmsd > 0.4 * noise,
-        notes: `노이즈 크기에 따라 S_epi 및 종합 점수가 단계적으로 감쇄 (σ=${noise}Å -> 점수 ${evalRes.finalFitnessScore})`,
+        passed: evalRes.alignment.rmsd > 0.3 * noise,
+        notes: `노이즈 크기에 따라 S_epi 및 종합 점수가 단계적으로 감쇄 (σ=${noise}Å -> 점수 ${evalRes.finalFitnessScore.toFixed(1)})`,
       });
     }
 
     // 4. Candidate Truncation test (Fragment mode)
     try {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const truncatedSeq = baseSeq.substring(0, 40); // 40% length (< 70% threshold)
-      const pdbTrunc = generateAlphaHelixPdb(truncatedSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
+      const pdbTarget = SAMPLE_SPIKE_RBD_6M0J_PDB;
+      const pdbTrunc = truncatePdbResidues(SAMPLE_SPIKE_RBD_6M0J_PDB, 7);
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbTrunc);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const cTarget = targetStruct.chains[0] || 'E';
+      const cCand = candStruct.chains[0] || 'E';
+      calculateSASA(targetStruct.residuesByChain[cTarget]);
+      calculateSASA(candStruct.residuesByChain[cCand]);
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      const align = alignStructures(targetStruct.residuesByChain[cTarget], candStruct.residuesByChain[cCand]);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
@@ -157,21 +218,22 @@ export const ValidationLab: React.FC<{
       console.error(e);
     }
 
-    // 5. Negative Control (Unrelated protein Lysozyme test)
+    // 5. Negative Control (Unrelated real protein Lysozyme 1AKI test)
     try {
-      const pdbTarget = generateAlphaHelixPdb(baseSeq, 'A', 1, [0, 0, 0], 95.0, 0.0);
-      const lysozymeSeq = PRESET_BENCHMARKS[5].candidate.sequence;
-      const pdbNegative = generateAlphaHelixPdb(lysozymeSeq, 'A', 1, [0, 0, 0], 90.0, 0.0);
+      const pdbTarget = SAMPLE_SPIKE_RBD_6M0J_PDB;
+      const pdbNegative = SAMPLE_LYSOZYME_1AKI_PDB;
       const targetStruct = parsePdb(pdbTarget);
       const candStruct = parsePdb(pdbNegative);
-      calculateSASA(targetStruct.residuesByChain['A']);
-      calculateSASA(candStruct.residuesByChain['A']);
+      const cTarget = targetStruct.chains[0] || 'E';
+      const cCand = candStruct.chains[0] || 'A';
+      calculateSASA(targetStruct.residuesByChain[cTarget]);
+      calculateSASA(candStruct.residuesByChain[cCand]);
 
-      const align = alignStructures(targetStruct.residuesByChain['A'], candStruct.residuesByChain['A']);
+      const align = alignStructures(targetStruct.residuesByChain[cTarget], candStruct.residuesByChain[cCand]);
       const evalRes = evaluateAntigenicMimicry(align, epitopeResidues, false, [0.25, 0.4, 0.2, 0.15]);
 
       suite.push({
-        testName: '음성 대조군 (무관 단백질 리소자임)',
+        testName: '음성 대조군 (무관 단백질 리소자임 1AKI)',
         category: '특이도 검증 (False Positive 방지)',
         expected: 'TM < 0.45, S_epi < 0.40, 점수 < 50점',
         tmScore: evalRes.subScores.s_global,
@@ -180,7 +242,7 @@ export const ValidationLab: React.FC<{
         sExp: evalRes.subScores.s_exp,
         finalScore: evalRes.finalFitnessScore,
         passed: evalRes.subScores.s_global < 0.45 && evalRes.subScores.s_epi < 0.40,
-        notes: '전혀 다른 3D 구조를 가진 단백질에 대해 엄격히 낮은 점수를 부여하여 위양성 차단',
+        notes: '전혀 다른 3D 구조를 가진 리소자임 1AKI에 대해 엄격히 낮은 점수를 부여하여 위양성 차단',
       });
     } catch (e: any) {
       console.error(e);

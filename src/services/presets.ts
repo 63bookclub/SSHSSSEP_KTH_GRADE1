@@ -83,6 +83,8 @@ function get3Letter(aa1: string): string {
   return map[aa1.toUpperCase()] || 'ALA';
 }
 
+import { SAMPLE_SPIKE_RBD_6M0J_PDB, SAMPLE_LYSOZYME_1AKI_PDB } from '../data/sampleStructures.ts';
+
 export interface PresetItem {
   id: string;
   category: 'Spike' | 'Flu' | 'RSV' | 'Validation';
@@ -93,6 +95,7 @@ export interface PresetItem {
     type: 'pdb' | 'uniprot';
     identifier: string;
     chain: string;
+    samplePdbText?: string;
   };
   epitope: {
     method: 'manual' | 'complex' | 'prediction_csv';
@@ -124,6 +127,7 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       type: 'pdb',
       identifier: '6M0J',
       chain: 'E',
+      samplePdbText: SAMPLE_SPIKE_RBD_6M0J_PDB,
     },
     epitope: {
       method: 'manual',
@@ -149,6 +153,7 @@ export const PRESET_BENCHMARKS: PresetItem[] = [
       type: 'pdb',
       identifier: '6M0J',
       chain: 'E',
+      samplePdbText: SAMPLE_SPIKE_RBD_6M0J_PDB,
     },
     epitope: {
       method: 'complex',
