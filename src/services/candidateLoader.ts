@@ -10,7 +10,7 @@ import {
 import { predictStructureWithESMFold } from './esmFoldService.ts';
 import { isValidPdbId, validateAminoAcidSequence } from '../utils/validation.ts';
 import { checkAtomCountLimit } from '../utils/limits.ts';
-import { fetchWithTimeout } from './structureLoader.ts';
+import { fetchPdbStructure } from './structureLoader.ts';
 
 export interface LoadCandidateInput {
   candidate_input?: string;
@@ -81,18 +81,7 @@ export async function loadCandidateStructure(
     sourceType = 'pdb';
     identifier = candId;
     try {
-      const r = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.pdb`);
-      if (r.ok) {
-        const txt = await r.text();
-        if (!txt.trim().startsWith('<')) structureText = txt;
-      }
-      if (!structureText) {
-        const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${candId}.cif`);
-        if (cifRes.ok) {
-          const txt = await cifRes.text();
-          if (!txt.trim().startsWith('<')) structureText = txt;
-        }
-      }
+      structureText = await fetchPdbStructure(candId);
       if (!structureText) {
         throw new Error(`PDB ${candId} 다운로드 실패 또는 HTML 오류 페이지 응답입니다.`);
       }

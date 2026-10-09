@@ -18,6 +18,68 @@ export async function fetchWithTimeout(url: string, options: RequestInit = {}, t
   }
 }
 
+/**
+ * Unified structure loader trying PDB first, then CIF, then local bundled PDB fallback (/public/pdb/${cleanId}.pdb)
+ */
+export async function fetchPdbStructure(identifier: string, timeoutMs = 12000): Promise<string> {
+  const cleanId = identifier.trim().toUpperCase();
+  let structureText = '';
+
+  // 1. Try RCSB PDB first
+  try {
+    const pdbUrl = `https://files.rcsb.org/download/${cleanId}.pdb`;
+    const rcsbRes = await fetchWithTimeout(pdbUrl, {}, timeoutMs);
+    if (rcsbRes.ok) {
+      const txt = await rcsbRes.text();
+      if (!txt.trim().startsWith('<')) {
+        structureText = txt;
+      }
+    }
+  } catch (_err) {
+    // Ignore error to try CIF or local fallback
+  }
+
+  // 2. Try RCSB CIF second
+  if (!structureText) {
+    try {
+      const cifUrl = `https://files.rcsb.org/download/${cleanId}.cif`;
+      const cifRes = await fetchWithTimeout(cifUrl, {}, timeoutMs);
+      if (cifRes.ok) {
+        const txt = await cifRes.text();
+        if (!txt.trim().startsWith('<')) {
+          structureText = txt;
+        }
+      }
+    } catch (_err) {
+      // Ignore error to try local fallback
+    }
+  }
+
+  // 3. Try local bundled fallback (/public/pdb/${cleanId}.pdb or public/pdb/${cleanId}.pdb)
+  if (!structureText) {
+    try {
+      if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+        const localRes = await fetch(`/pdb/${cleanId}.pdb`);
+        if (localRes.ok) {
+          const txt = await localRes.text();
+          if (!txt.trim().startsWith('<')) structureText = txt;
+        }
+      } else {
+        const fs = await import('fs');
+        const path = await import('path');
+        const localPath = path.join(process.cwd(), 'public', 'pdb', `${cleanId}.pdb`);
+        if (fs.existsSync(localPath)) {
+          structureText = fs.readFileSync(localPath, 'utf-8');
+        }
+      }
+    } catch (_err) {
+      // Ignore fallback errors
+    }
+  }
+
+  return structureText;
+}
+
 export interface LoadTargetInput {
   uniprot_id?: string;
   pdb_id?: string;
@@ -52,7 +114,7 @@ export async function loadTargetStructure(input: LoadTargetInput): Promise<Loade
       }
       const metaData = await metaRes.json();
       const entry = Array.isArray(metaData) ? metaData[0] : metaData;
-      const fileUrl = entry?.cifUrl || entry?.pdbUrl;
+      const fileUrl = entry?.pdbUrl || entry?.cifUrl;
       if (!fileUrl) {
         throw new Error('AlphaFold DB 결과에 구조 파일 다운로드 URL이 포함되어 있지 않습니다.');
       }
@@ -72,24 +134,7 @@ export async function loadTargetStructure(input: LoadTargetInput): Promise<Loade
     sourceType = 'pdb';
     identifier = pdb_id.trim().toUpperCase();
     try {
-      const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
-      const rcsbRes = await fetchWithTimeout(pdbUrl);
-      if (rcsbRes.ok) {
-        const txt = await rcsbRes.text();
-        if (!txt.trim().startsWith('<')) {
-          structureText = txt;
-        }
-      }
-      if (!structureText) {
-        const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
-        const cifRes = await fetchWithTimeout(cifUrl);
-        if (cifRes.ok) {
-          const txt = await cifRes.text();
-          if (!txt.trim().startsWith('<')) {
-            structureText = txt;
-          }
-        }
-      }
+      structureText = await fetchPdbStructure(identifier);
       if (!structureText) {
         throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없거나 HTML 오류 응답을 받았습니다.`);
       }
