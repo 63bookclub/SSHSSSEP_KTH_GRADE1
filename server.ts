@@ -1043,6 +1043,11 @@ app.post('/api/v1/ai-insights', async (req, res) => {
   }
 });
 
+// Centralized Express Global Error Handler
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  handleApiError(res, err, '서버 내부 오류가 발생했습니다.', 500);
+});
+
 // Serve public assets (including local 3Dmol-min.js)
 app.use(express.static('public'));
 
