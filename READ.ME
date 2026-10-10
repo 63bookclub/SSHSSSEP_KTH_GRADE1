@@ -171,8 +171,7 @@ ssbd-2026/
 ## 6. 설치 및 실행 방법 (Installation & Usage)
 
 ### 📋 요구 사항
-- **Node.js**: v18.0.0 이상 권장
-- **패키지 관리자**: `npm` 또는 `bun`
+- **Runtime & Package Manager**: **Bun** (권장, `bun.lock` 기반) 또는 Node.js (v18+) / `npm`
 
 ### ⚙️ 1. 환경 변수 설정
 프로젝트 루트 경로에 `.env` 파일을 생성하고 Groq API 키를 입력합니다:
@@ -187,19 +186,19 @@ GROQ_API_KEY="your_groq_api_key_here"
 
 ### 📦 2. 패키지 설치
 ```bash
-npm install
+bun install
 ```
 
 ### 🚀 3. 개발 서버 실행
 ```bash
-npm run dev
+bun run dev
 ```
 브라우저에서 `http://localhost:3000`으로 접속하여 2026 SSEP_TEAM SSBD(씁뜩)을 실행합니다.
 
 ### 🏗️ 4. 프로덕션 빌드 및 실행
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
 ---
@@ -221,7 +220,8 @@ npm run start
 > **"이 결과는 컴퓨터상(in silico)의 3차원 구조 중첩 비교 분석이며, 실제 백신의 체내 면역 유도 효능, 중화항체 역가, 생물학적 안전성을 직접적으로 의미하거나 보증하지 않습니다."**  
 > 소논문, 탐구 보고서, 발표 자료 작성 시에는 본 시스템의 결과를 **"효과 검증"**이 아닌 **"구조적 항원성 보존 예측(Antigenic Mimicry Prediction)"**으로 기술해야 합니다.
 
-### 📚 추천 인용 문헌 (References for Academic Papers)
+### 📚 추천 인용 문헌 및 외부 라이브러리 라이선스 (References & Library Licenses)
+- **3Dmol.js (v2.5.5)**: Rego, M., & Koes, D. (2015). *3Dmol.js: 3D visualization of molecular data in HTML5.* Bioinformatics, 31(8), 1322–1324. (Managed via `3dmol` npm package, BSD-3-Clause License)
 - **Kabsch Algorithm**: Kabsch, W. (1976). *A solution for the best rotation to relate two sets of vectors.* Acta Crystallographica Section A, 32(5), 922-923.
 - **TM-score Formulation**: Zhang, Y., & Skolnick, J. (2004). *Scoring function for automated assessment of protein structure template quality.* Proteins, 57(4), 702-710.
 - **Shrake-Rupley SASA**: Shrake, A., & Rupley, J. A. (1973). *Environment and exposure to solvent of protein atoms. Lysozyme and insulin.* Journal of Molecular Biology, 79(2), 351-371.
