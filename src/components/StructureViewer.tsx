@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Layers, Eye, EyeOff, Sparkles, RefreshCcw } from 'lucide-react';
+import * as $3Dmol from '3dmol';
+
+if (typeof window !== 'undefined' && !window.$3Dmol) {
+  window.$3Dmol = $3Dmol;
+}
 
 interface ResidueDev {
   res_id: number | string;
