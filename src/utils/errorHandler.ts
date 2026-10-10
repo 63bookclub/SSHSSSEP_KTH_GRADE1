@@ -1,5 +1,15 @@
 import { Response } from 'express';
 
+export function sendApiError(
+  res: Response,
+  message: string,
+  statusCode: number = 400
+) {
+  return res.status(statusCode).json({
+    error: message,
+  });
+}
+
 export function handleApiError(
   res: Response,
   err: any,

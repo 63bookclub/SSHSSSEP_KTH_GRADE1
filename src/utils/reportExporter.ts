@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo, getConfidenceGrade } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -16,36 +17,29 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
-  const isSimulated =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const srcInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated
+  );
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const isSimulated = srcInfo.isSimulated;
+  const candidateSourceLabel = srcInfo.label;
 
-  let gradeLabel = '낮음 (Low Mimicry)';
+  const confGrade = getConfidenceGrade(dynamicScore, {
+    isTemporaryEpitope: result.auto_settings.is_temporary_epitope,
+    isSimulated,
+  });
+
+  const gradeLabel = confGrade.fullLabel;
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
-  if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
+  if (confGrade.grade === 'high') {
     gradeColor = '#059669';
     gradeBg = '#d1fae5';
-  } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
+  } else if (confGrade.grade === 'moderate') {
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';
-  }
-
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeLabel += ' (임시 에피톱 적용)';
-  } else if (isSimulated) {
-    gradeLabel += ' (모사 구조 적용)';
   }
 
   const residueRows = residues

@@ -40,7 +40,7 @@ import {
   checkAtomCountLimit,
   checkBatchCandidatesLimit,
 } from './src/utils/limits.ts';
-import { handleApiError } from './src/utils/errorHandler.ts';
+import { handleApiError, sendApiError } from './src/utils/errorHandler.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -224,14 +224,14 @@ app.post('/api/v1/epitopes', async (req, res) => {
 
     const target = targetsStore.get(target_id);
     if (!target) {
-      return res.status(404).json({ error: '지정된 target_id를 찾을 수 없습니다.' });
+      return sendApiError(res, '지정된 타겟 ID(target_id)를 찾을 수 없습니다.', 404);
     }
 
     let targetChain = '';
     try {
       targetChain = resolveTargetChain(target.chains, reqTargetChain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
 
     const epitopeResult = await resolveEpitopeInput({
@@ -290,7 +290,7 @@ app.post('/api/v1/candidates', async (req, res) => {
     try {
       candChain = resolveCandidateChain(structure.chains, req.body.chain, req.body.filename);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
     const resList = structure.residuesByChain[candChain] || [];
     const allCandResidues = Object.values(structure.residuesByChain).flat();
@@ -336,27 +336,27 @@ app.post('/api/v1/jobs', async (req, res) => {
     const candidate = candidatesStore.get(candidate_id);
     const epitope = epitopesStore.get(epitope_id);
 
-    if (!target) return res.status(404).json({ error: '타겟 구조를 찾을 수 없습니다.' });
-    if (!candidate) return res.status(404).json({ error: '후보 구조를 찾을 수 없습니다.' });
-    if (!epitope) return res.status(404).json({ error: '에피톱 정보를 찾을 수 없습니다.' });
+    if (!target) return sendApiError(res, '타겟 구조를 찾을 수 없습니다.', 404);
+    if (!candidate) return sendApiError(res, '후보 구조를 찾을 수 없습니다.', 404);
+    if (!epitope) return sendApiError(res, '에피톱 정보를 찾을 수 없습니다.', 404);
 
     let target_chain = '';
     try {
       target_chain = resolveTargetChain(target.chains, reqTargetChain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
 
     let candChain = '';
     try {
       candChain = resolveCandidateChain(candidate.structure.chains, reqCandChain || candidate.chain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
 
     const weightValidation = validateAndNormalizeWeights(weights);
     if (!weightValidation.isValid) {
-      return res.status(400).json({ error: weightValidation.error });
+      return sendApiError(res, weightValidation.error || '유효하지 않은 가중치 설정입니다.', 400);
     }
     const customWeights = weightValidation.normalizedWeights;
 
@@ -366,10 +366,10 @@ app.post('/api/v1/jobs', async (req, res) => {
     const candResidues = candidate.structure.residuesByChain[candChain] || Object.values(candidate.structure.residuesByChain)[0] || [];
 
     if (targetResidues.length === 0) {
-      return res.status(400).json({ error: `타겟 체인 ${target_chain}에 잔기가 없습니다.` });
+      return sendApiError(res, `타겟 체인 ${target_chain}에 잔기가 없습니다.`, 400);
     }
     if (candResidues.length === 0) {
-      return res.status(400).json({ error: `후보 물질에 잔기가 없습니다.` });
+      return sendApiError(res, '후보 물질에 잔기가 없습니다.', 400);
     }
 
     // Create queued job record
@@ -447,7 +447,7 @@ app.get('/api/v1/jobs/:job_id', (req, res) => {
   const { job_id } = req.params;
   const job = jobsStore.get(job_id);
   if (!job) {
-    return res.status(404).json({ error: '작업을 찾을 수 없습니다.' });
+    return sendApiError(res, '작업을 찾을 수 없습니다.', 404);
   }
 
   if (job.status === 'failed') {
@@ -522,10 +522,10 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     } = req.body;
 
     if (!target_input || typeof target_input !== 'string' || !target_input.trim()) {
-      return res.status(400).json({ error: '타겟(Target) 입력값이 필요합니다. (PDB ID, UniProt ID, 또는 서열)' });
+      return sendApiError(res, '타겟(Target) 입력값이 필요합니다. (PDB ID, UniProt ID, 또는 서열)', 400);
     }
     if (!candidate_input || typeof candidate_input !== 'string' || !candidate_input.trim()) {
-      return res.status(400).json({ error: '후보 물질(Candidate) 입력값이 필요합니다. (아미노산 서열 또는 PDB ID)' });
+      return sendApiError(res, '후보 물질(Candidate) 입력값이 필요합니다. (아미노산 서열 또는 PDB ID)', 400);
     }
 
     // --- 1. Resolve Target Structure ---
@@ -544,12 +544,12 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     try {
       targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
 
     const targetResidues = targetStructure.residuesByChain[targetChain] || [];
     if (targetResidues.length === 0) {
-      return res.status(400).json({ error: `타겟 체인 ${targetChain}에 분석 가능한 잔기가 없습니다.` });
+      return sendApiError(res, `타겟 체인 ${targetChain}에 분석 가능한 잔기가 없습니다.`, 400);
     }
 
     // Save target
@@ -613,12 +613,12 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     try {
       candChain = resolveCandidateChain(candStructure.chains, reqCandidateChain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
 
     const candResidues = candStructure.residuesByChain[candChain] || Object.values(candStructure.residuesByChain)[0] || [];
     if (candResidues.length === 0) {
-      return res.status(400).json({ error: '후보 물질 구조에서 잔기 좌표를 생성하지 못했습니다.' });
+      return sendApiError(res, '후보 물질 구조에서 잔기 좌표를 생성하지 못했습니다.', 400);
     }
     const allCandAssemblyResidues = Object.values(candStructure.residuesByChain).flat();
     calculateSASA(candResidues, 1.4, 96, allCandAssemblyResidues);
@@ -640,7 +640,7 @@ app.post('/api/v1/quick-analyze', async (req, res) => {
     // --- 4. Alignment & Antigenic Mimicry Evaluation ---
     const weightValidation = validateAndNormalizeWeights(weights);
     if (!weightValidation.isValid) {
-      return res.status(400).json({ error: weightValidation.error });
+      return sendApiError(res, weightValidation.error || '유효하지 않은 가중치 설정입니다.', 400);
     }
     const customWeights = weightValidation.normalizedWeights;
 
@@ -739,16 +739,16 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
     } = req.body;
 
     if (!target_input || typeof target_input !== 'string') {
-      return res.status(400).json({ error: '타겟 구조 입력(PDB/UniProt/구조 내용)이 필요합니다.' });
+      return sendApiError(res, '타겟 구조 입력(PDB/UniProt/구조 내용)이 필요합니다.', 400);
     }
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
-      return res.status(400).json({ error: '최소 1개 이상의 후보 물질(Candidate Entity)이 필요합니다.' });
+      return sendApiError(res, '최소 1개 이상의 후보 물질(Candidate Entity)이 필요합니다.', 400);
     }
 
     const batchCandCheck = checkBatchCandidatesLimit(candidates.length);
     if (!batchCandCheck.isWithinLimit) {
-      return res.status(400).json({ error: batchCandCheck.error });
+      return sendApiError(res, batchCandCheck.error || '후보 물질 개수 제한을 초과했습니다.', 400);
     }
 
     // 1. Resolve Target
@@ -767,7 +767,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
     try {
       targetChain = resolveTargetChain(targetStructure.chains, reqTargetChain);
     } catch (chainErr: any) {
-      return res.status(400).json({ error: chainErr.message });
+      return sendApiError(res, chainErr.message, 400);
     }
     const targetResidues = targetStructure.residuesByChain[targetChain] || Object.values(targetStructure.residuesByChain)[0] || [];
     const allTargetBatchResidues = Object.values(targetStructure.residuesByChain).flat();
@@ -825,7 +825,7 @@ app.post('/api/v1/batch-analyze', async (req, res) => {
 
     const weightValidation = validateAndNormalizeWeights(weights);
     if (!weightValidation.isValid) {
-      return res.status(400).json({ error: weightValidation.error });
+      return sendApiError(res, weightValidation.error || '유효하지 않은 가중치 설정입니다.', 400);
     }
     const customWeights = weightValidation.normalizedWeights;
 
@@ -972,7 +972,7 @@ app.get('/api/v1/downloads/:job_id/aligned.pdb', (req, res) => {
   const { job_id } = req.params;
   const job = jobsStore.get(job_id);
   if (!job || !job.alignedPdb) {
-    return res.status(404).send('정렬된 PDB 파일을 찾을 수 없습니다.');
+    return sendApiError(res, '정렬된 PDB 파일을 찾을 수 없습니다.', 404);
   }
 
   res.setHeader('Content-Type', 'chemical/x-pdb');
@@ -985,12 +985,12 @@ app.post('/api/v1/ai-insights', async (req, res) => {
   try {
     const { job_id } = req.body;
     if (!job_id || typeof job_id !== 'string') {
-      return res.status(400).json({ error: 'job_id가 누락되었거나 유효하지 않습니다.' });
+      return sendApiError(res, 'job_id가 누락되었거나 유효하지 않습니다.', 400);
     }
 
     const job = jobsStore.get(job_id);
     if (!job || !job.result) {
-      return res.status(404).json({ error: '해당 job_id의 저장된 분석 결과를 찾을 수 없습니다.' });
+      return sendApiError(res, '해당 job_id의 저장된 분석 결과를 찾을 수 없습니다.', 404);
     }
 
     const evalRes = job.result;

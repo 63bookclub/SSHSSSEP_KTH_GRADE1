@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceInfo, getConfidenceGrade } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -81,23 +82,19 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + (isExperimental ? 0 : normW[3] * (sConf ?? 0))) * 100
   ) / 100;
 
-  const isSimulatedStructure =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const srcInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated
+  );
 
-  // Score grade
-  let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-  if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
-  } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
-  }
+  const isSimulatedStructure = srcInfo.isSimulated;
 
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeBadge.label += ' (임시 에피톱)';
-  } else if (isSimulatedStructure) {
-    gradeBadge.label += ' (모사 구조)';
-  }
+  const confidenceGrade = getConfidenceGrade(dynamicScore, {
+    isTemporaryEpitope: result.auto_settings.is_temporary_epitope,
+    isSimulated: isSimulatedStructure,
+  });
+  const gradeBadge = { label: confidenceGrade.fullLabel, bg: confidenceGrade.badgeClass };
 
   // Generate AI Insight handler
   const handleGenerateAi = async () => {
@@ -229,23 +226,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.removeChild(link);
   };
 
-  const getCandidateBadgeText = () => {
-    const src = result.auto_settings.candidate_source;
-    if (src === 'simulated' || result.auto_settings.is_simulated) {
-      return '모사 대체 (Simulated Template)';
-    }
-    if (src === 'alphafold') {
-      return 'AlphaFold DB (pLDDT)';
-    }
-    if (src === 'esmfold') {
-      return 'ESMFold 예측 (pLDDT)';
-    }
-    if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
-      return '실험 결정 구조 (PDB)';
-    }
-    return 'ESMFold 예측 (pLDDT)';
-  };
-
   return (
     <div className="space-y-6">
       {/* 0. Prominent Simulated Structure Warning Banner if applicable */}
@@ -316,7 +296,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
                 isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
               }`}
             >
-              {getCandidateBadgeText()}
+              {srcInfo.label}
             </span>
           </div>
         </div>
