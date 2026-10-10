@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Layers, Eye, EyeOff, Sparkles, RefreshCcw } from 'lucide-react';
+import * as $3Dmol from '3dmol';
 
 interface ResidueDev {
   res_id: number | string;
@@ -20,11 +21,6 @@ interface StructureViewerProps {
   title?: string;
 }
 
-declare global {
-  interface Window {
-    $3Dmol?: any;
-  }
-}
 
 const parseRangeList = (rangeStr?: string): (number | string)[] => {
   if (!rangeStr) return [];
@@ -82,18 +78,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
   const [libReady, setLibReady] = useState(false);
 
   useEffect(() => {
-    // Check if $3Dmol is loaded
-    if (window.$3Dmol) {
-      setLibReady(true);
-    } else {
-      const interval = setInterval(() => {
-        if (window.$3Dmol) {
-          setLibReady(true);
-          clearInterval(interval);
-        }
-      }, 200);
-      return () => clearInterval(interval);
-    }
+    setLibReady(true);
   }, []);
 
   const updateStyles = () => {
@@ -236,7 +221,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
             surfaceSel.chain = targetChain;
           }
           viewer.addSurface(
-            window.$3Dmol.SurfaceType.MS,
+            ($3Dmol as any).SurfaceType.MS,
             {
               opacity: 0.35,
               color: '#38bdf8',
@@ -255,7 +240,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
   };
 
   useEffect(() => {
-    if (!libReady || !containerRef.current || !window.$3Dmol) return;
+    if (!libReady || !containerRef.current) return;
 
     let resizeObserver: ResizeObserver | null = null;
 
@@ -264,7 +249,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
       containerRef.current.innerHTML = '';
 
       const config = { backgroundColor: '#090d16', antialias: true };
-      const viewer = window.$3Dmol.createViewer(containerRef.current, config);
+      const viewer = ($3Dmol as any).createViewer(containerRef.current, config);
       if (!viewer) return;
       viewerRef.current = viewer;
 
