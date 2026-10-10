@@ -171,8 +171,8 @@ ssbd-2026/
 ## 6. 설치 및 실행 방법 (Installation & Usage)
 
 ### 📋 요구 사항
-- **Node.js**: v18.0.0 이상 권장
-- **패키지 관리자**: `npm` 또는 `bun`
+- **Node.js / Bun Runtime**: v18.0.0 이상 권장
+- **패키지 관리자**: `bun` (`bun.lock` 단일 관리)
 
 ### ⚙️ 1. 환경 변수 설정
 프로젝트 루트 경로에 `.env` 파일을 생성하고 Groq API 키를 입력합니다:
@@ -187,19 +187,19 @@ GROQ_API_KEY="your_groq_api_key_here"
 
 ### 📦 2. 패키지 설치
 ```bash
-npm install
+bun install
 ```
 
 ### 🚀 3. 개발 서버 실행
 ```bash
-npm run dev
+bun run dev
 ```
 브라우저에서 `http://localhost:3000`으로 접속하여 2026 SSEP_TEAM SSBD(씁뜩)을 실행합니다.
 
 ### 🏗️ 4. 프로덕션 빌드 및 실행
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
 ---
@@ -228,6 +228,7 @@ npm run start
 - **Theoretical MaxSASA**: Tien, M. Z., et al. (2013). *Maximum allowed solvent accessibilities of amino acids in proteins.* PLOS ONE, 8(11), e80635.
 - **RCSB PDB**: Berman, H. M., et al. (2000). *The Protein Data Bank.* Nucleic Acids Research, 28(1), 235-242.
 - **AlphaFold Database**: Jumper, J., et al. (2021). *Highly accurate protein structure prediction with AlphaFold.* Nature, 596(7873), 583-589.
+- **3Dmol.js**: Rego, M., & Koes, D. (2015). *3Dmol.js: 3D visualization of molecular data in HTML5.* Bioinformatics, 31(8), 1322-1324. (npm package `3dmol` v2.5.5, BSD-3-Clause License, see `3Dmol-LICENSE.md`)
 
 ---
 
