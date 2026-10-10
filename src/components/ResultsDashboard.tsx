@@ -229,22 +229,21 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.removeChild(link);
   };
 
-  const getCandidateBadgeText = () => {
+  const getCandidateBadgeInfo = () => {
     const src = result.auto_settings.candidate_source;
     if (src === 'simulated' || result.auto_settings.is_simulated) {
-      return '모사 대체 (Simulated Template)';
+      return { label: '모사(대체)', fullLabel: '모사 대체 구조 (Simulated Template)', bg: 'bg-rose-950/80 text-rose-300 border-rose-800' };
     }
     if (src === 'alphafold') {
-      return 'AlphaFold DB (pLDDT)';
-    }
-    if (src === 'esmfold') {
-      return 'ESMFold 예측 (pLDDT)';
+      return { label: 'AlphaFold DB', fullLabel: 'AlphaFold DB (pLDDT)', bg: 'bg-sky-950/80 text-sky-300 border-sky-800' };
     }
     if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
-      return '실험 결정 구조 (PDB)';
+      return { label: '실험', fullLabel: '실험 결정 구조 (PDB)', bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-800' };
     }
-    return 'ESMFold 예측 (pLDDT)';
+    return { label: 'ESMFold 예측', fullLabel: 'ESMFold 예측 구조 (pLDDT)', bg: 'bg-purple-950/80 text-purple-300 border-purple-800' };
   };
+
+  const candidateSourceBadge = getCandidateBadgeInfo();
 
   return (
     <div className="space-y-6">
@@ -310,13 +309,9 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
+            <span className="text-slate-400 text-[10px] block mb-1">후보 구조 출처 (Structure Source)</span>
+            <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold border ${candidateSourceBadge.bg}`}>
+              {candidateSourceBadge.fullLabel}
             </span>
           </div>
         </div>
@@ -329,9 +324,14 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-slate-400">종합 항원 구조 적합도 점수</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${gradeBadge.bg}`}>
-                {gradeBadge.label}
-              </span>
+              <div className="flex items-center space-x-1.5">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${candidateSourceBadge.bg}`}>
+                  {candidateSourceBadge.label}
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${gradeBadge.bg}`}>
+                  {gradeBadge.label}
+                </span>
+              </div>
             </div>
 
             <div className="flex items-baseline space-x-2 my-2">

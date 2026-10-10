@@ -740,6 +740,16 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
 
                   const isRank1 = idx === 0;
 
+                  const isSimulated = d.auto_settings.is_simulated || d.auto_settings.candidate_source === 'simulated';
+                  let sourceBadge = { label: 'ESMFold 예측', bg: 'bg-purple-950/80 text-purple-300 border-purple-800' };
+                  if (isSimulated) {
+                    sourceBadge = { label: '모사(대체)', bg: 'bg-rose-950/80 text-rose-300 border-rose-800' };
+                  } else if (d.auto_settings.candidate_source === 'alphafold') {
+                    sourceBadge = { label: 'AlphaFold DB', bg: 'bg-sky-950/80 text-sky-300 border-sky-800' };
+                  } else if (d.auto_settings.candidate_source === 'experimental' || d.auto_settings.is_experimental_candidate) {
+                    sourceBadge = { label: '실험', bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-800' };
+                  }
+
                   return (
                     <tr
                       key={item.candidate_id}
@@ -755,7 +765,12 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                         )}
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-bold text-white">{item.candidate_name}</div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-white">{item.candidate_name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${sourceBadge.bg}`}>
+                            {sourceBadge.label}
+                          </span>
+                        </div>
                         {d.epitope_breakdown && d.epitope_breakdown.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {d.epitope_breakdown.map((ep) => (

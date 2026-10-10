@@ -20,12 +20,16 @@ export function generateReportHtml(
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
+  let candidateSourceBadgeText = 'ESMFold 예측';
   let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
   if (isSimulated) {
+    candidateSourceBadgeText = '모사(대체)';
     candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
   } else if (result.auto_settings.candidate_source === 'alphafold') {
+    candidateSourceBadgeText = 'AlphaFold DB';
     candidateSourceLabel = 'AlphaFold DB (pLDDT)';
   } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
+    candidateSourceBadgeText = '실험';
     candidateSourceLabel = '실험 결정 구조 (PDB)';
   }
 
@@ -270,6 +274,7 @@ export function generateReportHtml(
       <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; margin-bottom: 8px;">
         <span class="score-badge">${dynamicScore.toFixed(2)} 점</span>
         <div style="text-align: right;">
+          <div style="font-size: 10px; font-weight: 700; color: #0284c7; margin-bottom: 2px;">[구조 출처: ${candidateSourceBadgeText}]</div>
           <div style="font-size: 13px; font-weight: 800; color: ${gradeColor};">${gradeLabel}</div>
           <div style="font-size: 10px; color: #64748b;">정밀 구조 적합성 판정</div>
         </div>
