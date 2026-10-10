@@ -22,6 +22,7 @@ import {
   batchAnalyze,
   JobResultData,
 } from '../services/api.ts';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
 
 interface BatchScreeningViewProps {
@@ -340,6 +341,8 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     const headers = [
       'Rank',
       'Candidate_Name',
+      'Structure_Source',
+      'Confidence_Grade',
       'Candidate_ID',
       'Status',
       'Fitness_Score',
@@ -356,16 +359,24 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     const rows = batchResponse.results.map((r, idx) => {
       const d = r.data;
       if (!d) {
-        return [idx + 1, r.candidate_name, r.candidate_id, r.status, 'FAILED', '', '', '', '', '', '', '', ''];
+        return [idx + 1, r.candidate_name, '', '', r.candidate_id, r.status, 'FAILED', '', '', '', '', '', '', '', ''];
       }
       const score = d.final_fitness_score ?? 0;
       let grade = 'LOW';
       if (score >= 75) grade = 'HIGH';
       else if (score >= 50) grade = 'MODERATE';
 
+      const srcInfo = getStructureSourceInfo(
+        d.auto_settings?.candidate_source,
+        d.auto_settings?.is_experimental_candidate,
+        d.auto_settings?.is_simulated
+      );
+
       return [
         idx + 1,
         `"${r.candidate_name}"`,
+        `"${srcInfo.badgeLabel}"`,
+        `"${srcInfo.confidenceGrade}"`,
         r.candidate_id,
         r.status,
         score.toFixed(2),
@@ -704,6 +715,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                 <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider bg-slate-950/60">
                   <th className="py-2.5 px-3 text-center w-12">순위</th>
                   <th className="py-2.5 px-3">후보 물질 엔티티명</th>
+                  <th className="py-2.5 px-3 text-center">구조 출처 / 신뢰 등급</th>
                   <th className="py-2.5 px-3 text-right">종합 모방도</th>
                   <th className="py-2.5 px-3 text-center">판정 등급</th>
                   <th className="py-2.5 px-3 text-right">골격 유사도 (S_global)</th>
@@ -739,6 +751,11 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const isRank1 = idx === 0;
+                  const srcInfo = getStructureSourceInfo(
+                    d.auto_settings?.candidate_source,
+                    d.auto_settings?.is_experimental_candidate,
+                    d.auto_settings?.is_simulated
+                  );
 
                   return (
                     <tr
@@ -773,6 +790,14 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border border-slate-700 bg-slate-950 ${srcInfo.colorClass}`}>
+                          {srcInfo.badgeLabel}
+                        </span>
+                        <div className="text-[9px] text-slate-400 mt-0.5 font-mono">
+                          {srcInfo.confidenceGrade}
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-sm text-cyan-300">
                         {score.toFixed(2)}점

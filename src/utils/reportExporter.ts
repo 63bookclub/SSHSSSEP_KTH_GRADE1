@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -16,18 +17,13 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
-  const isSimulated =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
-
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const srcInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated
+  );
+  const isSimulated = srcInfo.category === 'simulated';
+  const candidateSourceLabel = srcInfo.fullLabel;
 
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
@@ -304,7 +300,7 @@ export function generateReportHtml(
           <td style="font-weight: bold; text-align: right;">${result.auto_settings.mode === 'fragment' ? '단편 (Fragment)' : '전체 (Full)'} / ${escapeHtml(result.auto_settings.target_chain)}체인</td>
         </tr>
         <tr>
-          <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
+          <td style="color: #64748b;">후보 구조 출처 및 신뢰 등급:</td>
           <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
         </tr>
         <tr>
