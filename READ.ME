@@ -125,7 +125,8 @@ ssbd-2026/
 ├── metadata.json                   # AI Studio Applet 메타데이터 정의
 ├── .env.example                    # 환경 변수 템플릿 (GROQ_API_KEY 등)
 ├── public/
-│   └── 3Dmol-min.js                # 3D 분자 구조 렌더링 라이브러리
+│   ├── 3Dmol-min.js                # 3D 분자 구조 렌더링 라이브러리
+│   └── 3Dmol-min.js.LICENSE.md     # 3Dmol.js 라이선스(BSD-3-Clause) 및 버전 정보 (v2.5.5)
 └── src/
     ├── App.tsx                     # 메인 애플리케이션 엔트리 및 네비게이션
     ├── main.tsx                    # React DOM 마운트
@@ -172,7 +173,7 @@ ssbd-2026/
 
 ### 📋 요구 사항
 - **Node.js**: v18.0.0 이상 권장
-- **패키지 관리자**: `npm` 또는 `bun`
+- **패키지 관리자**: `bun`
 
 ### ⚙️ 1. 환경 변수 설정
 프로젝트 루트 경로에 `.env` 파일을 생성하고 Groq API 키를 입력합니다:
@@ -187,19 +188,19 @@ GROQ_API_KEY="your_groq_api_key_here"
 
 ### 📦 2. 패키지 설치
 ```bash
-npm install
+bun install
 ```
 
 ### 🚀 3. 개발 서버 실행
 ```bash
-npm run dev
+bun run dev
 ```
 브라우저에서 `http://localhost:3000`으로 접속하여 2026 SSEP_TEAM SSBD(씁뜩)을 실행합니다.
 
 ### 🏗️ 4. 프로덕션 빌드 및 실행
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
 ---
