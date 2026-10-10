@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceInfo, getConfidenceGrade } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -85,19 +86,19 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
-  // Score grade
-  let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-  if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
-  } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
-  }
+  const srcInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_simulated,
+    result.auto_settings.is_experimental_candidate
+  );
 
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeBadge.label += ' (임시 에피톱)';
-  } else if (isSimulatedStructure) {
-    gradeBadge.label += ' (모사 구조)';
-  }
+  const gradeInfo = getConfidenceGrade(
+    dynamicScore,
+    result.auto_settings.is_temporary_epitope,
+    isSimulatedStructure
+  );
+
+  const gradeBadge = { label: gradeInfo.label, bg: gradeInfo.bgClass };
 
   // Generate AI Insight handler
   const handleGenerateAi = async () => {
@@ -309,14 +310,13 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
             <span className="font-bold text-slate-200">체인 {result.auto_settings.target_chain}</span>
           </div>
 
-          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
+          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 flex flex-col justify-center">
+            <span className="text-slate-400 text-[10px] block mb-1">후보 구조 출처 (Structure Source)</span>
+            <span className="flex items-center space-x-1.5">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${srcInfo.badgeClass}`}>
+                {srcInfo.badgeText}
+              </span>
+              <span className="text-[11px] text-slate-300 font-semibold">{srcInfo.label}</span>
             </span>
           </div>
         </div>

@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo, getConfidenceGrade } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -20,33 +21,22 @@ export function generateReportHtml(
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const srcInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_simulated,
+    result.auto_settings.is_experimental_candidate
+  );
 
-  let gradeLabel = '낮음 (Low Mimicry)';
-  let gradeColor = '#e11d48';
-  let gradeBg = '#ffe4e6';
-  if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
-    gradeColor = '#059669';
-    gradeBg = '#d1fae5';
-  } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
-    gradeColor = '#d97706';
-    gradeBg = '#fef3c7';
-  }
+  const gradeInfo = getConfidenceGrade(
+    dynamicScore,
+    result.auto_settings.is_temporary_epitope,
+    isSimulated
+  );
 
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeLabel += ' (임시 에피톱 적용)';
-  } else if (isSimulated) {
-    gradeLabel += ' (모사 구조 적용)';
-  }
+  const candidateSourceLabel = srcInfo.label;
+  const gradeLabel = gradeInfo.label;
+  const gradeColor = gradeInfo.colorHex;
+  const gradeBg = gradeInfo.bgHex;
 
   const residueRows = residues
     .slice(0, 100)
@@ -305,7 +295,11 @@ export function generateReportHtml(
         </tr>
         <tr>
           <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
-          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
+          <td style="font-weight: bold; text-align: right;">
+            <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: bold; color: ${srcInfo.colorHex}; background-color: ${srcInfo.colorHex}15; border: 1px solid ${srcInfo.colorHex}40;">
+              ${escapeHtml(srcInfo.badgeText)}
+            </span> (${escapeHtml(srcInfo.label)})
+          </td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>
