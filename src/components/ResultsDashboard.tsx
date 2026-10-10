@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -81,9 +82,12 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + (isExperimental ? 0 : normW[3] * (sConf ?? 0))) * 100
   ) / 100;
 
-  const isSimulatedStructure =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated
+  );
+  const isSimulatedStructure = sourceInfo.category === 'simulated';
 
   // Score grade
   let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
@@ -229,22 +233,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.removeChild(link);
   };
 
-  const getCandidateBadgeText = () => {
-    const src = result.auto_settings.candidate_source;
-    if (src === 'simulated' || result.auto_settings.is_simulated) {
-      return '모사 대체 (Simulated Template)';
-    }
-    if (src === 'alphafold') {
-      return 'AlphaFold DB (pLDDT)';
-    }
-    if (src === 'esmfold') {
-      return 'ESMFold 예측 (pLDDT)';
-    }
-    if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
-      return '실험 결정 구조 (PDB)';
-    }
-    return 'ESMFold 예측 (pLDDT)';
-  };
 
   return (
     <div className="space-y-6">
@@ -310,13 +298,9 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
+            <span className="text-slate-400 text-[10px] block">구조 출처 배지 및 신뢰 등급</span>
+            <span className={`text-xs ${sourceInfo.colorClass}`}>
+              {sourceInfo.fullLabel}
             </span>
           </div>
         </div>
