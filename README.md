@@ -171,8 +171,7 @@ ssbd-2026/
 ## 6. 설치 및 실행 방법 (Installation & Usage)
 
 ### 📋 요구 사항
-- **Node.js**: v18.0.0 이상 권장
-- **패키지 관리자**: `npm` 또는 `bun`
+- **Bun**: v1.0.0 이상 권장 (`bun.lock` 기반 통일)
 
 ### ⚙️ 1. 환경 변수 설정
 프로젝트 루트 경로에 `.env` 파일을 생성하고 Groq API 키를 입력합니다:
@@ -187,19 +186,25 @@ GROQ_API_KEY="your_groq_api_key_here"
 
 ### 📦 2. 패키지 설치
 ```bash
-npm install
+bun install
 ```
 
 ### 🚀 3. 개발 서버 실행
 ```bash
-npm run dev
+bun run dev
 ```
 브라우저에서 `http://localhost:3000`으로 접속하여 2026 SSEP_TEAM SSBD(씁뜩)을 실행합니다.
 
 ### 🏗️ 4. 프로덕션 빌드 및 실행
 ```bash
-npm run build
-npm run start
+bun run build
+bun start
+```
+
+### 🧪 5. 테스트 및 타입 검사
+```bash
+bun test
+bun run lint
 ```
 
 ---

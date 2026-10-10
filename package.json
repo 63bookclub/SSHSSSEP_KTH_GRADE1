@@ -4,14 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "bun x tsx server.ts",
     "build": "vite build",
-    "start": "bun run build && NODE_ENV=production tsx server.ts",
+    "start": "bun run build && NODE_ENV=production bun x tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "bun x tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
+    "3dmol": "^2.5.5",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "cors": "^2.8.6",

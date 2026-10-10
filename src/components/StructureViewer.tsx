@@ -1,5 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Layers, Eye, EyeOff, Sparkles, RefreshCcw } from 'lucide-react';
+import * as $3DmolModule from '3dmol';
+
+const get3Dmol = (): any => {
+  if (typeof window !== 'undefined' && window.$3Dmol) {
+    return window.$3Dmol;
+  }
+  if ($3DmolModule && ($3DmolModule as any).createViewer) {
+    return $3DmolModule;
+  }
+  if ($3DmolModule && ($3DmolModule as any).default && ($3DmolModule as any).default.createViewer) {
+    return ($3DmolModule as any).default;
+  }
+  return $3DmolModule;
+};
 
 interface ResidueDev {
   res_id: number | string;
@@ -82,12 +96,19 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
   const [libReady, setLibReady] = useState(false);
 
   useEffect(() => {
-    // Check if $3Dmol is loaded
-    if (window.$3Dmol) {
+    const $3dmol = get3Dmol();
+    if ($3dmol && ($3dmol.createViewer || $3dmol.SurfaceType)) {
+      if (typeof window !== 'undefined' && !window.$3Dmol) {
+        window.$3Dmol = $3dmol;
+      }
       setLibReady(true);
     } else {
       const interval = setInterval(() => {
-        if (window.$3Dmol) {
+        const checkObj = get3Dmol();
+        if (checkObj && (checkObj.createViewer || checkObj.SurfaceType)) {
+          if (typeof window !== 'undefined' && !window.$3Dmol) {
+            window.$3Dmol = checkObj;
+          }
           setLibReady(true);
           clearInterval(interval);
         }
@@ -235,14 +256,17 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
           if (isolateTargetChain && targetChain) {
             surfaceSel.chain = targetChain;
           }
-          viewer.addSurface(
-            window.$3Dmol.SurfaceType.MS,
-            {
-              opacity: 0.35,
-              color: '#38bdf8',
-            },
-            surfaceSel
-          );
+          const $3dmol = get3Dmol();
+          if ($3dmol && $3dmol.SurfaceType) {
+            viewer.addSurface(
+              $3dmol.SurfaceType.MS,
+              {
+                opacity: 0.35,
+                color: '#38bdf8',
+              },
+              surfaceSel
+            );
+          }
         } catch (e) {
           console.warn('Surface rendering error:', e);
         }
@@ -255,7 +279,8 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
   };
 
   useEffect(() => {
-    if (!libReady || !containerRef.current || !window.$3Dmol) return;
+    const $3dmol = get3Dmol();
+    if (!libReady || !containerRef.current || !$3dmol) return;
 
     let resizeObserver: ResizeObserver | null = null;
 
@@ -264,7 +289,7 @@ export const StructureViewer: React.FC<StructureViewerProps> = ({
       containerRef.current.innerHTML = '';
 
       const config = { backgroundColor: '#090d16', antialias: true };
-      const viewer = window.$3Dmol.createViewer(containerRef.current, config);
+      const viewer = $3dmol.createViewer(containerRef.current, config);
       if (!viewer) return;
       viewerRef.current = viewer;
 
