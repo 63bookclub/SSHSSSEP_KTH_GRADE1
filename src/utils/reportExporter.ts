@@ -20,13 +20,26 @@ export function generateReportHtml(
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
+  let candidateSourceLabel = 'ESMFold 예측';
+  let trustGradeLabel = '신뢰 등급: pLDDT 기반 (Moderate - AI 예측)';
+  let sourceBadgeBg = '#e0e7ff';
+  let sourceBadgeColor = '#3730a3';
+
   if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
+    candidateSourceLabel = '모사(대체)';
+    trustGradeLabel = '신뢰 등급: 낮음 (Low - 템플릿 대체)';
+    sourceBadgeBg = '#ffe4e6';
+    sourceBadgeColor = '#9f1239';
   } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
+    candidateSourceLabel = 'AlphaFold DB';
+    trustGradeLabel = '신뢰 등급: pLDDT 기반 (Moderate/High - DB)';
+    sourceBadgeBg = '#e0f2fe';
+    sourceBadgeColor = '#075985';
   } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
+    candidateSourceLabel = '실험';
+    trustGradeLabel = '신뢰 등급: 높음 (High - PDB 결정학/NMR)';
+    sourceBadgeBg = '#d1fae5';
+    sourceBadgeColor = '#065f46';
   }
 
   let gradeLabel = '낮음 (Low Mimicry)';
@@ -274,6 +287,14 @@ export function generateReportHtml(
           <div style="font-size: 10px; color: #64748b;">정밀 구조 적합성 판정</div>
         </div>
       </div>
+      <div style="margin-bottom: 8px; display: flex; gap: 6px; align-items: center;">
+        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 10.5px; background-color: ${sourceBadgeBg}; color: ${sourceBadgeColor};">
+          구조 출처: ${escapeHtml(candidateSourceLabel)}
+        </span>
+        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 10.5px; background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;">
+          ${escapeHtml(trustGradeLabel)}
+        </span>
+      </div>
       <div style="font-size: 10.5px; border-top: 1px solid #e2e8f0; padding-top: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
         <div>• <strong>골격 유사도(S_global):</strong> ${(result.sub_scores.s_global * 100).toFixed(1)}% (가중치 ${(normWeights[0] * 100).toFixed(0)}%)</div>
         <div>• <strong>에피톱 모방도(S_epi):</strong> ${(result.sub_scores.s_epi * 100).toFixed(1)}% (가중치 ${(normWeights[1] * 100).toFixed(0)}%)</div>
@@ -305,7 +326,7 @@ export function generateReportHtml(
         </tr>
         <tr>
           <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
-          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
+          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)} (${escapeHtml(trustGradeLabel)})</td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>

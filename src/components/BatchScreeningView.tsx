@@ -740,6 +740,40 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
 
                   const isRank1 = idx === 0;
 
+                  const srcInfo = (() => {
+                    const autoSettings = d.auto_settings;
+                    const src = autoSettings?.candidate_source;
+                    const isSimulated = autoSettings?.is_simulated || src === 'simulated';
+                    const isExperimental = autoSettings?.is_experimental_candidate || src === 'experimental';
+
+                    if (isSimulated) {
+                      return {
+                        sourceLabel: '모사(대체)',
+                        trustGrade: '신뢰 등급: 낮음',
+                        badgeClass: 'bg-rose-950/80 text-rose-300 border-rose-800',
+                      };
+                    }
+                    if (src === 'alphafold') {
+                      return {
+                        sourceLabel: 'AlphaFold DB',
+                        trustGrade: '신뢰 등급: pLDDT 기반',
+                        badgeClass: 'bg-sky-950/80 text-sky-300 border-sky-800',
+                      };
+                    }
+                    if (isExperimental) {
+                      return {
+                        sourceLabel: '실험',
+                        trustGrade: '신뢰 등급: 높음',
+                        badgeClass: 'bg-emerald-950/80 text-emerald-300 border-emerald-800',
+                      };
+                    }
+                    return {
+                      sourceLabel: 'ESMFold 예측',
+                      trustGrade: '신뢰 등급: pLDDT 기반',
+                      badgeClass: 'bg-indigo-950/80 text-indigo-300 border-indigo-800',
+                    };
+                  })();
+
                   return (
                     <tr
                       key={item.candidate_id}
@@ -756,6 +790,14 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                       </td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-white">{item.candidate_name}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${srcInfo.badgeClass}`}>
+                            구조 출처: {srcInfo.sourceLabel}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-900 text-slate-300 border border-slate-800">
+                            {srcInfo.trustGrade}
+                          </span>
+                        </div>
                         {d.epitope_breakdown && d.epitope_breakdown.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {d.epitope_breakdown.map((ep) => (
