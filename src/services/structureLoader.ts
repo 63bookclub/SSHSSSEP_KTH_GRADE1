@@ -1,6 +1,7 @@
 import { parsePdb, parseMmcif, calculateSASA, ParsedStructure } from './bioAlgorithms.ts';
 import { isValidPdbId, isValidUniprotId } from '../utils/validation.ts';
 import { checkAtomCountLimit } from '../utils/limits.ts';
+import { fetchRcsbStructure } from './rcsbService.ts';
 
 export async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
@@ -72,27 +73,8 @@ export async function loadTargetStructure(input: LoadTargetInput): Promise<Loade
     sourceType = 'pdb';
     identifier = pdb_id.trim().toUpperCase();
     try {
-      const pdbUrl = `https://files.rcsb.org/download/${identifier}.pdb`;
-      const rcsbRes = await fetchWithTimeout(pdbUrl);
-      if (rcsbRes.ok) {
-        const txt = await rcsbRes.text();
-        if (!txt.trim().startsWith('<')) {
-          structureText = txt;
-        }
-      }
-      if (!structureText) {
-        const cifUrl = `https://files.rcsb.org/download/${identifier}.cif`;
-        const cifRes = await fetchWithTimeout(cifUrl);
-        if (cifRes.ok) {
-          const txt = await cifRes.text();
-          if (!txt.trim().startsWith('<')) {
-            structureText = txt;
-          }
-        }
-      }
-      if (!structureText) {
-        throw new Error(`RCSB PDB에서 ${identifier}를 다운로드할 수 없거나 HTML 오류 응답을 받았습니다.`);
-      }
+      const result = await fetchRcsbStructure(identifier);
+      structureText = result.structureText;
     } catch (rcsbErr: any) {
       throw new Error(`RCSB PDB 조회 실패: ${rcsbErr?.message || '해당 PDB ID를 찾지 못했습니다.'}. 네트워크 상태를 확인하거나 PDB 파일을 직접 업로드해 주세요.`);
     }
