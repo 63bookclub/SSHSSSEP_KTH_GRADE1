@@ -229,22 +229,37 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.removeChild(link);
   };
 
-  const getCandidateBadgeText = () => {
-    const src = result.auto_settings.candidate_source;
-    if (src === 'simulated' || result.auto_settings.is_simulated) {
-      return '모사 대체 (Simulated Template)';
+  const getStructureSourceInfo = (autoSettings: any) => {
+    const src = autoSettings.candidate_source;
+    if (src === 'simulated' || autoSettings.is_simulated) {
+      return {
+        sourceBadge: '모사(대체)',
+        trustGrade: '신뢰 등급: 낮음 (Low - 템플릿 대체)',
+        badgeClass: 'bg-rose-950/80 text-rose-300 border-rose-800',
+      };
     }
     if (src === 'alphafold') {
-      return 'AlphaFold DB (pLDDT)';
+      return {
+        sourceBadge: 'AlphaFold DB',
+        trustGrade: '신뢰 등급: pLDDT 기반 (Moderate/High - DB)',
+        badgeClass: 'bg-sky-950/80 text-sky-300 border-sky-800',
+      };
     }
-    if (src === 'esmfold') {
-      return 'ESMFold 예측 (pLDDT)';
+    if (src === 'experimental' || autoSettings.is_experimental_candidate) {
+      return {
+        sourceBadge: '실험',
+        trustGrade: '신뢰 등급: 높음 (High - PDB 결정학/NMR)',
+        badgeClass: 'bg-emerald-950/80 text-emerald-300 border-emerald-800',
+      };
     }
-    if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
-      return '실험 결정 구조 (PDB)';
-    }
-    return 'ESMFold 예측 (pLDDT)';
+    return {
+      sourceBadge: 'ESMFold 예측',
+      trustGrade: '신뢰 등급: pLDDT 기반 (Moderate - AI 예측)',
+      badgeClass: 'bg-indigo-950/80 text-indigo-300 border-indigo-800',
+    };
   };
+
+  const sourceInfo = getStructureSourceInfo(result.auto_settings);
 
   return (
     <div className="space-y-6">
@@ -310,13 +325,12 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
+            <span className="text-slate-400 text-[10px] block">구조 출처 &amp; 신뢰 등급</span>
+            <span className={`font-bold block ${sourceInfo.badgeClass.split(' ')[1]}`}>
+              구조 출처: {sourceInfo.sourceBadge}
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              {sourceInfo.trustGrade}
             </span>
           </div>
         </div>
@@ -339,6 +353,15 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
                 {dynamicScore.toFixed(1)}
               </span>
               <span className="text-sm font-semibold text-slate-400">/ 100점</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 my-2.5">
+              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${sourceInfo.badgeClass}`}>
+                구조 출처: {sourceInfo.sourceBadge}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold border bg-slate-950 text-slate-300 border-slate-800">
+                {sourceInfo.trustGrade}
+              </span>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed mt-2">
