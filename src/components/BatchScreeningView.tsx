@@ -23,6 +23,7 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { getStructureSourceInfo, getConfidenceGradeInfo } from '../utils/structureSource.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -704,6 +705,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                 <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider bg-slate-950/60">
                   <th className="py-2.5 px-3 text-center w-12">순위</th>
                   <th className="py-2.5 px-3">후보 물질 엔티티명</th>
+                  <th className="py-2.5 px-3 text-center">구조 출처</th>
                   <th className="py-2.5 px-3 text-right">종합 모방도</th>
                   <th className="py-2.5 px-3 text-center">판정 등급</th>
                   <th className="py-2.5 px-3 text-right">골격 유사도 (S_global)</th>
@@ -728,15 +730,11 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const score = d.final_fitness_score ?? 0;
-                  let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
-                  let gradeText = '낮음 (Low)';
-                  if (score >= 75) {
-                    gradeBg = 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
-                    gradeText = '높음 (High)';
-                  } else if (score >= 50) {
-                    gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
-                    gradeText = '중간 (Mod)';
-                  }
+                  const candSourceInfo = getStructureSourceInfo(d.auto_settings);
+                  const candGradeInfo = getConfidenceGradeInfo(score, {
+                    isTemporaryEpitope: d.auto_settings?.is_temporary_epitope,
+                    isSimulated: candSourceInfo.isSimulated,
+                  });
 
                   const isRank1 = idx === 0;
 
@@ -774,12 +772,19 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                           </div>
                         )}
                       </td>
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${candSourceInfo.badgeBg} ${candSourceInfo.badgeText} ${candSourceInfo.badgeBorder}`}
+                        >
+                          {candSourceInfo.category}
+                        </span>
+                      </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-sm text-cyan-300">
                         {score.toFixed(2)}점
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${gradeBg}`}>
-                          {gradeText}
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${candGradeInfo.badgeBg}`}>
+                          {candGradeInfo.fullLabel}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right font-mono text-slate-300">

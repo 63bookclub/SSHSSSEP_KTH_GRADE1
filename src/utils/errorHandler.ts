@@ -1,5 +1,15 @@
 import { Response } from 'express';
 
+/**
+ * Standard API error response shape across all endpoints
+ */
+export interface ApiErrorResponse {
+  error: string;
+}
+
+/**
+ * Centralized API error handler for caught exceptions
+ */
 export function handleApiError(
   res: Response,
   err: any,
@@ -10,11 +20,27 @@ export function handleApiError(
   console.error(`[API ERROR] ${fallbackMessage}:`, err?.stack || err?.message || err);
 
   // Return a clean, user-facing error message without exposing internal stack traces or code details
-  const clientMessage = typeof err?.message === 'string' && !err.message.includes('at ') && !err.message.includes('/node_modules/')
-    ? err.message
-    : fallbackMessage;
+  const clientMessage =
+    typeof err?.message === 'string' &&
+    !err.message.includes('at ') &&
+    !err.message.includes('/node_modules/')
+      ? err.message
+      : fallbackMessage;
 
   return res.status(statusCode).json({
     error: clientMessage,
+  });
+}
+
+/**
+ * Helper to directly send a formatted API error response
+ */
+export function sendApiError(
+  res: Response,
+  statusCode: number,
+  message: string
+) {
+  return res.status(statusCode).json({
+    error: message,
   });
 }
