@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo, getConfidenceGradeInfo } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -16,36 +17,35 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
-  const isSimulated =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_simulated,
+    result.auto_settings.is_experimental_candidate
+  );
+  const isSimulated = sourceInfo.isSimulated;
+  const candidateSourceLabel = sourceInfo.label;
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const gradeInfo = getConfidenceGradeInfo(
+    dynamicScore,
+    result.auto_settings.is_temporary_epitope,
+    isSimulated
+  );
 
-  let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
   let gradeBg = '#ffe4e6';
   if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
     gradeColor = '#059669';
     gradeBg = '#d1fae5';
   } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
     gradeColor = '#d97706';
     gradeBg = '#fef3c7';
   }
 
+  let gradeLabel = gradeInfo.gradeLabel;
   if (result.auto_settings.is_temporary_epitope) {
-    gradeLabel += ' (임시 에피톱 적용)';
+    gradeLabel = gradeInfo.shortLabel + ' (임시 에피톱 적용)';
   } else if (isSimulated) {
-    gradeLabel += ' (모사 구조 적용)';
+    gradeLabel = gradeInfo.shortLabel + ' (모사 구조 적용)';
   }
 
   const residueRows = residues
