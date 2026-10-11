@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -16,18 +17,19 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
-  const isSimulated =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const plddtValues = residues.map((r) => r.plddt).filter((v): v is number => typeof v === 'number' && v > 0);
+  const meanPlddt = plddtValues.length > 0
+    ? plddtValues.reduce((a, b) => a + b, 0) / plddtValues.length
+    : undefined;
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated,
+    meanPlddt
+  );
+
+  const isSimulated = sourceInfo.source === 'simulated';
 
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
@@ -305,7 +307,15 @@ export function generateReportHtml(
         </tr>
         <tr>
           <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
-          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
+          <td style="font-weight: bold; text-align: right;">
+            <span style="background-color: ${sourceInfo.badgeBgHex}; color: ${sourceInfo.badgeColorHex}; padding: 2px 8px; border-radius: 4px; border: 1px solid ${sourceInfo.badgeColorHex}40;">
+              ${escapeHtml(sourceInfo.badgeText)}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td style="color: #64748b;">구조 신뢰 등급 (Confidence Grade):</td>
+          <td style="font-weight: bold; text-align: right; color: #0f172a;">${escapeHtml(sourceInfo.confidenceGrade)}</td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>
