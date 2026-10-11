@@ -9,10 +9,14 @@ export function handleApiError(
   // Always log detailed stack trace or error message internally for debugging
   console.error(`[API ERROR] ${fallbackMessage}:`, err?.stack || err?.message || err);
 
-  // Return a clean, user-facing error message without exposing internal stack traces or code details
-  const clientMessage = typeof err?.message === 'string' && !err.message.includes('at ') && !err.message.includes('/node_modules/')
-    ? err.message
-    : fallbackMessage;
+  // Return a clean, user-facing error message in Korean without exposing internal stack traces or code details
+  let clientMessage = fallbackMessage;
+
+  if (typeof err === 'string' && err.trim().length > 0) {
+    clientMessage = err;
+  } else if (typeof err?.message === 'string' && !err.message.includes('at ') && !err.message.includes('/node_modules/')) {
+    clientMessage = err.message;
+  }
 
   return res.status(statusCode).json({
     error: clientMessage,
