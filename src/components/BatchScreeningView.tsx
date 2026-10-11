@@ -23,6 +23,7 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -704,6 +705,7 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                 <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider bg-slate-950/60">
                   <th className="py-2.5 px-3 text-center w-12">순위</th>
                   <th className="py-2.5 px-3">후보 물질 엔티티명</th>
+                  <th className="py-2.5 px-3 text-center">구조 출처 / 신뢰 등급</th>
                   <th className="py-2.5 px-3 text-right">종합 모방도</th>
                   <th className="py-2.5 px-3 text-center">판정 등급</th>
                   <th className="py-2.5 px-3 text-right">골격 유사도 (S_global)</th>
@@ -721,11 +723,24 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                       <tr key={item.candidate_id} className="bg-rose-950/20">
                         <td className="py-3 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
                         <td className="py-3 px-3 font-bold text-slate-200">{item.candidate_name}</td>
-                        <td colSpan={6} className="py-3 px-3 text-rose-400 text-xs">{item.error || '분석 실패'}</td>
+                      <td colSpan={7} className="py-3 px-3 text-rose-400 text-xs">{item.error || '분석 실패'}</td>
                         <td className="py-3 px-3 text-center">-</td>
                       </tr>
                     );
                   }
+
+                const candResList = d.residues || [];
+                const plddtValues = candResList.map((r) => r.plddt).filter((v): v is number => typeof v === 'number' && v > 0);
+                const meanPlddt = plddtValues.length > 0
+                  ? plddtValues.reduce((a, b) => a + b, 0) / plddtValues.length
+                  : undefined;
+
+                const sourceInfo = getStructureSourceInfo(
+                  d.auto_settings.candidate_source,
+                  d.auto_settings.is_experimental_candidate,
+                  d.auto_settings.is_simulated,
+                  meanPlddt
+                );
 
                   const score = d.final_fitness_score ?? 0;
                   let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
@@ -773,6 +788,16 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${sourceInfo.badgeClass}`}>
+                            {sourceInfo.badgeText}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {sourceInfo.confidenceGradeShort}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-sm text-cyan-300">
                         {score.toFixed(2)}점

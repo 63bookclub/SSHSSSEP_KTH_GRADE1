@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -81,9 +82,20 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + (isExperimental ? 0 : normW[3] * (sConf ?? 0))) * 100
   ) / 100;
 
-  const isSimulatedStructure =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const allResiduesList = result.residues || [];
+  const plddtValues = allResiduesList.map((r) => r.plddt).filter((v): v is number => typeof v === 'number' && v > 0);
+  const meanPlddt = plddtValues.length > 0
+    ? plddtValues.reduce((a, b) => a + b, 0) / plddtValues.length
+    : undefined;
+
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated,
+    meanPlddt
+  );
+
+  const isSimulatedStructure = sourceInfo.source === 'simulated';
 
   // Score grade
   let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
@@ -310,14 +322,15 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
-            </span>
+            <span className="text-slate-400 text-[10px] block mb-0.5">구조 출처 & 신뢰 등급</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${sourceInfo.badgeClass}`}>
+                {sourceInfo.badgeText}
+              </span>
+              <span className="text-[11px] font-semibold text-slate-300">
+                {sourceInfo.confidenceGradeShort}
+              </span>
+            </div>
           </div>
         </div>
       </div>
