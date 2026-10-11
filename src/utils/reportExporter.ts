@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceBadge, getConfidenceGrade } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -20,33 +21,21 @@ export function generateReportHtml(
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const sourceBadge = getStructureSourceBadge(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    isSimulated
+  );
 
-  let gradeLabel = '낮음 (Low Mimicry)';
-  let gradeColor = '#e11d48';
-  let gradeBg = '#ffe4e6';
-  if (dynamicScore >= 75.0) {
-    gradeLabel = '높음 (High Mimicry)';
-    gradeColor = '#059669';
-    gradeBg = '#d1fae5';
-  } else if (dynamicScore >= 50.0) {
-    gradeLabel = '중간 (Moderate Mimicry)';
-    gradeColor = '#d97706';
-    gradeBg = '#fef3c7';
-  }
+  const confidenceGrade = getConfidenceGrade(dynamicScore, {
+    isTemporaryEpitope: result.auto_settings.is_temporary_epitope,
+    isSimulated,
+  });
 
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeLabel += ' (임시 에피톱 적용)';
-  } else if (isSimulated) {
-    gradeLabel += ' (모사 구조 적용)';
-  }
+  const candidateSourceLabel = sourceBadge.label;
+  const gradeLabel = confidenceGrade.label;
+  const gradeColor = confidenceGrade.colorHex;
+  const gradeBg = confidenceGrade.bgHex;
 
   const residueRows = residues
     .slice(0, 100)
@@ -271,7 +260,9 @@ export function generateReportHtml(
         <span class="score-badge">${dynamicScore.toFixed(2)} 점</span>
         <div style="text-align: right;">
           <div style="font-size: 13px; font-weight: 800; color: ${gradeColor};">${gradeLabel}</div>
-          <div style="font-size: 10px; color: #64748b;">정밀 구조 적합성 판정</div>
+          <div style="font-size: 10.5px; font-weight: bold; color: ${sourceBadge.colorHex}; margin-top: 2px;">
+            [구조 출처] ${escapeHtml(sourceBadge.label)}
+          </div>
         </div>
       </div>
       <div style="font-size: 10.5px; border-top: 1px solid #e2e8f0; padding-top: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">

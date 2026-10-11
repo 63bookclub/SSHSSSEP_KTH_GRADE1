@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceBadge, getConfidenceGrade } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -85,19 +86,17 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     result.auto_settings.is_simulated ||
     result.auto_settings.candidate_source === 'simulated';
 
-  // Score grade
-  let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-  if (dynamicScore >= 75.0) {
-    gradeBadge = { label: '높음 (High)', bg: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
-  } else if (dynamicScore >= 50.0) {
-    gradeBadge = { label: '중간 (Moderate)', bg: 'bg-amber-950 text-amber-300 border-amber-800' };
-  }
+  // Central Structure Source Badge and Confidence Grade
+  const sourceBadge = getStructureSourceBadge(
+    result.auto_settings.candidate_source,
+    isExperimental,
+    isSimulatedStructure
+  );
 
-  if (result.auto_settings.is_temporary_epitope) {
-    gradeBadge.label += ' (임시 에피톱)';
-  } else if (isSimulatedStructure) {
-    gradeBadge.label += ' (모사 구조)';
-  }
+  const confidenceGrade = getConfidenceGrade(dynamicScore, {
+    isTemporaryEpitope: result.auto_settings.is_temporary_epitope,
+    isSimulated: isSimulatedStructure,
+  });
 
   // Generate AI Insight handler
   const handleGenerateAi = async () => {
@@ -311,12 +310,8 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
             <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
-            <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
-            >
-              {getCandidateBadgeText()}
+            <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold border ${sourceBadge.bgClass} ${sourceBadge.textClass} ${sourceBadge.borderClass}`}>
+              {sourceBadge.label}
             </span>
           </div>
         </div>
@@ -327,11 +322,19 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         {/* Left: Overall Fitness Score */}
         <div className="lg:col-span-4 p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/40 border border-cyan-500/30 shadow-2xl flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-400">종합 항원 구조 적합도 점수</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${gradeBadge.bg}`}>
-                {gradeBadge.label}
-              </span>
+            <div className="flex flex-col space-y-2 mb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400">종합 항원 구조 적합도 점수</span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${confidenceGrade.bgClass}`}>
+                  {confidenceGrade.label}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                <span className="text-[11px] text-slate-500">구조 출처 (Structure Source):</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${sourceBadge.bgClass} ${sourceBadge.textClass} ${sourceBadge.borderClass}`}>
+                  {sourceBadge.label}
+                </span>
+              </div>
             </div>
 
             <div className="flex items-baseline space-x-2 my-2">
