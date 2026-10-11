@@ -10,9 +10,11 @@ export function handleApiError(
   console.error(`[API ERROR] ${fallbackMessage}:`, err?.stack || err?.message || err);
 
   // Return a clean, user-facing error message without exposing internal stack traces or code details
-  const clientMessage = typeof err?.message === 'string' && !err.message.includes('at ') && !err.message.includes('/node_modules/')
-    ? err.message
-    : fallbackMessage;
+  const clientMessage = typeof err === 'string'
+    ? err
+    : (typeof err?.message === 'string' && !err.message.includes('at ') && !err.message.includes('/node_modules/'))
+      ? err.message
+      : fallbackMessage;
 
   return res.status(statusCode).json({
     error: clientMessage,

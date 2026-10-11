@@ -238,7 +238,7 @@ export function alignStructures(
   const L_cand = candCa.length;
 
   if (L_target === 0 || L_cand === 0) {
-    throw new Error('Both structures must have at least one C-alpha atom');
+    throw new Error('두 구조 모두 최소 1개 이상의 C-alpha 원자가 필요합니다.');
   }
 
   const d0_target = Math.max(0.5, L_target > 15 ? 1.24 * Math.cbrt(L_target - 15) - 1.8 : 0.5);

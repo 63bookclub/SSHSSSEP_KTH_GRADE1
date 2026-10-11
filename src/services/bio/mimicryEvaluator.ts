@@ -518,7 +518,7 @@ export function threadSequenceOnTemplate(
   const tempCaResidues = templateResidues.filter(r => r.caAtom !== null);
 
   if (tempCaResidues.length === 0) {
-    throw new Error('Template residues list is empty. Cannot thread sequence.');
+    throw new Error('템플릿 잔기 목록이 비어 있습니다. 서열을 쓰레딩할 수 없습니다.');
   }
 
   let matches = 0;
