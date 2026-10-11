@@ -23,6 +23,7 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { getConfidenceGrade } from '../utils/structureSource.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -728,15 +729,12 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const score = d.final_fitness_score ?? 0;
-                  let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
-                  let gradeText = '낮음 (Low)';
-                  if (score >= 75) {
-                    gradeBg = 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
-                    gradeText = '높음 (High)';
-                  } else if (score >= 50) {
-                    gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
-                    gradeText = '중간 (Mod)';
-                  }
+                  const gradeInfo = getConfidenceGrade(score, {
+                    isTemporaryEpitope: d.auto_settings.is_temporary_epitope,
+                    isSimulated: d.auto_settings.is_simulated || d.auto_settings.candidate_source === 'simulated',
+                  });
+                  const gradeBg = `${gradeInfo.bg} bg-opacity-60`;
+                  const gradeText = gradeInfo.shortLabel;
 
                   const isRank1 = idx === 0;
 
