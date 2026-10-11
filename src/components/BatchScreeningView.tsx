@@ -23,6 +23,7 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -151,11 +152,9 @@ const BATCH_PRESETS: BatchPreset[] = [
 ];
 
 export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspectCandidate }) => {
-  // Target inputs
   const [targetInput, setTargetInput] = useState<string>('');
   const [targetChain, setTargetChain] = useState<string>('E');
 
-  // Multi-epitopes & Candidates
   const [epitopes, setEpitopes] = useState<MultiEpitopeEntity[]>([
     {
       id: 'epi_1',
@@ -187,7 +186,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
   const [error, setError] = useState<string | null>(null);
   const [batchResponse, setBatchResponse] = useState<BatchAnalyzeResponse | null>(null);
 
-  // Apply a preset example with 1-click
   const handleApplyPreset = (preset: BatchPreset) => {
     setTargetInput(preset.targetInput);
     setTargetChain(preset.targetChain);
@@ -196,7 +194,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     setError(null);
   };
 
-  // Reset all fields to clean slate for direct manual input
   const handleResetClean = () => {
     setTargetInput('');
     setTargetChain('E');
@@ -226,7 +223,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     setError(null);
   };
 
-  // File upload for target
   const handleTargetFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -240,7 +236,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     reader.readAsText(file);
   };
 
-  // File upload for a specific candidate
   const handleCandidateFileUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -254,7 +249,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     reader.readAsText(file);
   };
 
-  // Add new epitope entity
   const handleAddEpitope = () => {
     const nextIdx = epitopes.length + 1;
     const colors = ['#e11d48', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#ec4899'];
@@ -279,7 +273,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     );
   };
 
-  // Add new candidate entity
   const handleAddCandidate = () => {
     const nextIdx = candidates.length + 1;
     const newCand: CandidateEntity = {
@@ -302,7 +295,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     );
   };
 
-  // Run Batch Screening with validation
   const handleRunBatch = async () => {
     setError(null);
     if (!targetInput.trim()) {
@@ -333,7 +325,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     }
   };
 
-  // Export Leaderboard CSV
   const handleExportCsv = () => {
     if (!batchResponse || !batchResponse.results) return;
 
@@ -341,6 +332,8 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
       'Rank',
       'Candidate_Name',
       'Candidate_ID',
+      'Structure_Source',
+      'Confidence_Grade',
       'Status',
       'Fitness_Score',
       'Grade',
@@ -356,17 +349,26 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
     const rows = batchResponse.results.map((r, idx) => {
       const d = r.data;
       if (!d) {
-        return [idx + 1, r.candidate_name, r.candidate_id, r.status, 'FAILED', '', '', '', '', '', '', '', ''];
+        return [idx + 1, r.candidate_name, r.candidate_id, '', '', r.status, 'FAILED', '', '', '', '', '', '', '', ''];
       }
       const score = d.final_fitness_score ?? 0;
       let grade = 'LOW';
       if (score >= 75) grade = 'HIGH';
       else if (score >= 50) grade = 'MODERATE';
 
+      const sourceInfo = getStructureSourceInfo(
+        d.auto_settings.candidate_source,
+        d.auto_settings.is_experimental_candidate,
+        d.auto_settings.is_simulated,
+        d.sub_scores?.s_conf
+      );
+
       return [
         idx + 1,
         `"${r.candidate_name}"`,
         r.candidate_id,
+        `"${sourceInfo.badgeText}"`,
+        `"${sourceInfo.confidenceGrade}"`,
         r.status,
         score.toFixed(2),
         grade,
@@ -437,7 +439,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         </div>
 
-        {/* 2. Top Example Selector Bar (초간편 모드 스타일 예시 버튼) */}
         <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-slate-300 flex items-center space-x-1.5">
@@ -479,7 +480,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         )}
 
-        {/* 3. Target & Chain Entity Config */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-1.5">
             <div className="flex items-center justify-between">
@@ -521,7 +521,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         </div>
 
-        {/* 4. Multi-Epitope Entities Manager */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -593,7 +592,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
           </div>
         </div>
 
-        {/* 5. Multi-Candidate Entities Manager */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -670,7 +668,6 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
         </div>
       </div>
 
-      {/* 6. Batch Screening Results Leaderboard Table */}
       {batchResponse && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
@@ -704,6 +701,8 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                 <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider bg-slate-950/60">
                   <th className="py-2.5 px-3 text-center w-12">순위</th>
                   <th className="py-2.5 px-3">후보 물질 엔티티명</th>
+                  <th className="py-2.5 px-3 text-center">구조 출처 배지</th>
+                  <th className="py-2.5 px-3 text-center">신뢰 등급</th>
                   <th className="py-2.5 px-3 text-right">종합 모방도</th>
                   <th className="py-2.5 px-3 text-center">판정 등급</th>
                   <th className="py-2.5 px-3 text-right">골격 유사도 (S_global)</th>
@@ -721,6 +720,8 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                       <tr key={item.candidate_id} className="bg-rose-950/20">
                         <td className="py-3 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
                         <td className="py-3 px-3 font-bold text-slate-200">{item.candidate_name}</td>
+                        <td className="py-3 px-3 text-center">-</td>
+                        <td className="py-3 px-3 text-center">-</td>
                         <td colSpan={6} className="py-3 px-3 text-rose-400 text-xs">{item.error || '분석 실패'}</td>
                         <td className="py-3 px-3 text-center">-</td>
                       </tr>
@@ -737,6 +738,13 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                     gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
                     gradeText = '중간 (Mod)';
                   }
+
+                  const sourceInfo = getStructureSourceInfo(
+                    d.auto_settings.candidate_source,
+                    d.auto_settings.is_experimental_candidate,
+                    d.auto_settings.is_simulated,
+                    d.sub_scores?.s_conf
+                  );
 
                   const isRank1 = idx === 0;
 
@@ -773,6 +781,16 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${sourceInfo.badgeBg} ${sourceInfo.badgeTextClass} ${sourceInfo.badgeBorderClass}`}
+                        >
+                          {sourceInfo.badgeText}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center text-[10px] font-semibold text-amber-300">
+                        {sourceInfo.confidenceGrade}
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-sm text-cyan-300">
                         {score.toFixed(2)}점
