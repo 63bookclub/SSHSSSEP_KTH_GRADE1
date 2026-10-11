@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { JobResultData } from '../services/api.ts';
 import { convertAiInsightToPrintHtml } from './aiTagParser.tsx';
 import { escapeHtml } from './escapeHtml.ts';
+import { getStructureSourceInfo } from './structureSource.ts';
 
 export type ResultData = NonNullable<JobResultData['data']>;
 
@@ -16,18 +17,14 @@ export function generateReportHtml(
   const residues = result.residues || [];
   const epitopeResidues = residues.filter((r) => r.in_epitope);
 
-  const isSimulated =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated,
+    result.sub_scores?.s_conf
+  );
 
-  let candidateSourceLabel = 'ESMFold 예측 구조 (pLDDT)';
-  if (isSimulated) {
-    candidateSourceLabel = '모사 대체 구조 (Simulated Template)';
-  } else if (result.auto_settings.candidate_source === 'alphafold') {
-    candidateSourceLabel = 'AlphaFold DB (pLDDT)';
-  } else if (result.auto_settings.candidate_source === 'experimental' || result.auto_settings.is_experimental_candidate) {
-    candidateSourceLabel = '실험 결정 구조 (PDB)';
-  }
+  const isSimulated = sourceInfo.type === 'simulated';
 
   let gradeLabel = '낮음 (Low Mimicry)';
   let gradeColor = '#e11d48';
@@ -74,7 +71,6 @@ export function generateReportHtml(
     )
     .join('');
 
-  // Format rationale paragraphs cleanly with bold headers
   const formattedRationale = (result.evaluation_rationale || '')
     .split('\n')
     .map((line) => {
@@ -304,8 +300,12 @@ export function generateReportHtml(
           <td style="font-weight: bold; text-align: right;">${result.auto_settings.mode === 'fragment' ? '단편 (Fragment)' : '전체 (Full)'} / ${escapeHtml(result.auto_settings.target_chain)}체인</td>
         </tr>
         <tr>
-          <td style="color: #64748b;">후보 구조 출처 (Structure Source):</td>
-          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(candidateSourceLabel)}</td>
+          <td style="color: #64748b;">후보 구조 출처 배지 (Source):</td>
+          <td style="font-weight: bold; text-align: right; color: ${isSimulated ? '#e11d48' : '#0f172a'};">${escapeHtml(sourceInfo.badgeText)}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b;">후보 구조 신뢰 등급 (Confidence Grade):</td>
+          <td style="font-weight: bold; text-align: right; color: #0284c7;">${escapeHtml(sourceInfo.confidenceGrade)}</td>
         </tr>
         <tr>
           <td style="color: #64748b;">에피톱 소스 / 잔기 개수:</td>
@@ -386,7 +386,6 @@ export function printReport(
     try {
       const html = generateReportHtml(result, dynamicScore, normWeights, aiInsight);
 
-      // Create a hidden iframe
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
@@ -435,7 +434,6 @@ export function printReport(
 
 /**
  * Direct high-fidelity PDF file generation using html2canvas + jsPDF
- * Perfectly renders Korean (Hangul) typography, badges, and tables without any corrupted characters!
  */
 export async function downloadPdfReport(
   result: ResultData,
@@ -446,7 +444,6 @@ export async function downloadPdfReport(
   try {
     const html = generateReportHtml(result, dynamicScore, normWeights, aiInsight);
 
-    // Create an off-screen container matching A4 pixel width (794px @ 96dpi)
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.left = '-9999px';
@@ -456,7 +453,6 @@ export async function downloadPdfReport(
     container.style.zIndex = '-1000';
     container.innerHTML = html;
 
-    // Remove no-print instruction button inside captured container
     const noPrintEl = container.querySelector('.no-print');
     if (noPrintEl) {
       noPrintEl.remove();
@@ -464,7 +460,6 @@ export async function downloadPdfReport(
 
     document.body.appendChild(container);
 
-    // Render HTML to high-resolution canvas (scale: 2 for 300dpi-equivalent sharpness)
     const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,
@@ -474,7 +469,6 @@ export async function downloadPdfReport(
 
     document.body.removeChild(container);
 
-    // Initialize A4 PDF
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = 210;
     const pdfHeight = 297;
@@ -483,7 +477,6 @@ export async function downloadPdfReport(
     const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
     let heightLeft = imgHeight;
-    let position = 0;
 
     const pageCanvas = document.createElement('canvas');
     const pageCtx = pageCanvas.getContext('2d');
@@ -494,7 +487,6 @@ export async function downloadPdfReport(
 
     let srcY = 0;
 
-    // First page
     if (pageCtx) {
       pageCtx.fillStyle = '#ffffff';
       pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
@@ -515,7 +507,6 @@ export async function downloadPdfReport(
       srcY += pxPageHeight;
     }
 
-    // Subsequent pages
     while (heightLeft > 5 && srcY < canvas.height) {
       pdf.addPage();
       if (pageCtx) {
@@ -542,7 +533,6 @@ export async function downloadPdfReport(
     pdf.save(`SSBD_Report_${Date.now()}.pdf`);
   } catch (err) {
     console.error('PDF export error:', err);
-    // Fallback: trigger print dialog if canvas capture fails
     printReport(result, dynamicScore, normWeights, aiInsight);
   }
 }

@@ -24,6 +24,7 @@ import { StructureViewer } from './StructureViewer.tsx';
 import { TermTooltip } from './GlossaryModal.tsx';
 import { printReport, downloadPdfReport, downloadHtmlReport } from '../utils/reportExporter.ts';
 import { AiInsightView } from '../utils/aiTagParser.tsx';
+import { getStructureSourceInfo } from '../utils/structureSource.ts';
 
 interface ResultsDashboardProps {
   jobResult: JobResultData;
@@ -81,9 +82,14 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     100 * (normW[0] * sGlobal + normW[1] * sEpi + normW[2] * sExp + (isExperimental ? 0 : normW[3] * (sConf ?? 0))) * 100
   ) / 100;
 
-  const isSimulatedStructure =
-    result.auto_settings.is_simulated ||
-    result.auto_settings.candidate_source === 'simulated';
+  const sourceInfo = getStructureSourceInfo(
+    result.auto_settings.candidate_source,
+    result.auto_settings.is_experimental_candidate,
+    result.auto_settings.is_simulated,
+    sConf
+  );
+
+  const isSimulatedStructure = sourceInfo.type === 'simulated';
 
   // Score grade
   let gradeBadge = { label: '낮음 (Low)', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
@@ -126,7 +132,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     setTimeout(() => setCopiedAi(false), 2000);
   };
 
-  // Export and print handlers (passing aiInsight)
   const handlePrint = () => {
     printReport(result, dynamicScore, normW, aiInsight);
   };
@@ -139,7 +144,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     downloadHtmlReport(result, dynamicScore, normW, aiInsight);
   };
 
-  // Sensitivity analysis table calculations: ±20% variations
+  // Sensitivity analysis table calculations
   const sensitivityRows = [
     {
       name: '기준 가중치 (Baseline)',
@@ -192,7 +197,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
   const totalPages = Math.ceil(filteredResidues.length / pageSize) || 1;
   const pagedResidues = filteredResidues.slice((page - 1) * pageSize, page * pageSize);
 
-  // CSV export handler
   const handleExportCsv = () => {
     const headers = [
       'Residue_ID',
@@ -227,23 +231,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const getCandidateBadgeText = () => {
-    const src = result.auto_settings.candidate_source;
-    if (src === 'simulated' || result.auto_settings.is_simulated) {
-      return '모사 대체 (Simulated Template)';
-    }
-    if (src === 'alphafold') {
-      return 'AlphaFold DB (pLDDT)';
-    }
-    if (src === 'esmfold') {
-      return 'ESMFold 예측 (pLDDT)';
-    }
-    if (src === 'experimental' || result.auto_settings.is_experimental_candidate) {
-      return '실험 결정 구조 (PDB)';
-    }
-    return 'ESMFold 예측 (pLDDT)';
   };
 
   return (
@@ -289,7 +276,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
             <span className="text-slate-400 text-[10px] block">분석 모드 (Mode)</span>
             <span className="font-bold text-cyan-300">
@@ -310,13 +297,18 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block">후보 구조 출처 (Structure Source)</span>
+            <span className="text-slate-400 text-[10px] block">구조 출처 배지 (Source Badge)</span>
             <span
-              className={`font-bold ${
-                isSimulatedStructure ? 'text-rose-400 font-extrabold' : 'text-amber-300'
-              }`}
+              className={`font-bold inline-block px-1.5 py-0.5 rounded text-[10px] border ${sourceInfo.badgeBg} ${sourceInfo.badgeTextClass} ${sourceInfo.badgeBorderClass}`}
             >
-              {getCandidateBadgeText()}
+              {sourceInfo.badgeText}
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800">
+            <span className="text-slate-400 text-[10px] block">신뢰 등급 (Confidence Grade)</span>
+            <span className="font-bold text-amber-300 text-[11px]">
+              {sourceInfo.confidenceGrade}
             </span>
           </div>
         </div>
@@ -470,7 +462,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
       </div>
 
-      {/* 3.5 Multi-Epitope Entity Breakdown (if multi-epitopes evaluated) */}
+      {/* 3.5 Multi-Epitope Entity Breakdown */}
       {(result as any).epitope_breakdown && (result as any).epitope_breakdown.length > 0 && (
         <div className="p-5 rounded-2xl bg-slate-900 border border-rose-500/30 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
@@ -598,7 +590,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
               </div>
             </div>
 
-            {/* Sensitivity Table for Research Paper */}
             <div className="pt-4 border-t border-slate-800">
               <span className="text-xs font-semibold text-slate-300 mb-2 block">
                 가중치 섭동(±20%)에 따른 점수 안정성 검증표 (소논문 보고서 삽입용):
@@ -677,7 +668,7 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
         </div>
       </div>
 
-      {/* 6.5 AI Deep Insights Card (Powered by Groq LLaMA 3.3) */}
+      {/* 6.5 AI Deep Insights Card */}
       <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-950/40 via-slate-900 to-purple-950/30 border border-indigo-500/40 shadow-xl space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
@@ -762,7 +753,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
 
           <div className="flex items-center flex-wrap gap-2">
-            {/* Search box */}
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -774,7 +764,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
               />
             </div>
 
-            {/* Filter buttons */}
             <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">
               <button
                 onClick={() => { setFilterMode('all'); setPage(1); }}
@@ -796,7 +785,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
               </button>
             </div>
 
-            {/* CSV export */}
             <button
               onClick={handleExportCsv}
               className="flex items-center space-x-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg transition shadow-md"
@@ -807,7 +795,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </div>
         </div>
 
-        {/* Table content */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[11px]">
@@ -880,7 +867,6 @@ export const ResultsDashboard: React.FC<ResultsDashboardProps> = ({
           </table>
         </div>
 
-        {/* Pagination bar */}
         <div className="px-4 py-2.5 bg-slate-950/70 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <span>
             페이지 {page} / {totalPages} (총 {filteredResidues.length}개 잔기)
