@@ -23,6 +23,10 @@ import {
   JobResultData,
 } from '../services/api.ts';
 import { PRESET_BENCHMARKS } from '../services/presets.ts';
+import {
+  getStructureSourceInfo,
+  getConfidenceGradeInfo,
+} from '../utils/structureSource.ts';
 
 interface BatchScreeningViewProps {
   onInspectCandidate: (jobResult: JobResultData, targetPdb?: string, candidatePdb?: string) => void;
@@ -728,15 +732,18 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                   }
 
                   const score = d.final_fitness_score ?? 0;
-                  let gradeBg = 'bg-rose-950/60 text-rose-300 border-rose-800';
-                  let gradeText = '낮음 (Low)';
-                  if (score >= 75) {
-                    gradeBg = 'bg-emerald-950/60 text-emerald-300 border-emerald-800';
-                    gradeText = '높음 (High)';
-                  } else if (score >= 50) {
-                    gradeBg = 'bg-amber-950/60 text-amber-300 border-amber-800';
-                    gradeText = '중간 (Mod)';
-                  }
+                  const sourceInfo = getStructureSourceInfo(
+                    d.auto_settings.candidate_source,
+                    d.auto_settings.is_simulated,
+                    d.auto_settings.is_experimental_candidate
+                  );
+
+                  const gradeInfo = getConfidenceGradeInfo(score, {
+                    isTemporaryEpitope: d.auto_settings.is_temporary_epitope,
+                    isSimulated: d.auto_settings.is_simulated || d.auto_settings.candidate_source === 'simulated',
+                    isExperimental: d.auto_settings.is_experimental_candidate,
+                    candidateSource: d.auto_settings.candidate_source,
+                  });
 
                   const isRank1 = idx === 0;
 
@@ -755,7 +762,12 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                         )}
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-bold text-white">{item.candidate_name}</div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-white">{item.candidate_name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceInfo.badgeClass}`}>
+                            {sourceInfo.shortLabel}
+                          </span>
+                        </div>
                         {d.epitope_breakdown && d.epitope_breakdown.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {d.epitope_breakdown.map((ep) => (
@@ -778,8 +790,8 @@ export const BatchScreeningView: React.FC<BatchScreeningViewProps> = ({ onInspec
                         {score.toFixed(2)}점
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${gradeBg}`}>
-                          {gradeText}
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${gradeInfo.badgeBg}`}>
+                          {gradeInfo.fullGrade}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right font-mono text-slate-300">
